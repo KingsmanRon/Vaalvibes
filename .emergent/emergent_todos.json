@@ -1,18 +1,6 @@
 [
   {
-    "content": "Remove install prompt/install behavior UI while keeping technical PWA files",
-    "status": "completed"
-  },
-  {
-    "content": "Remove Made with Emergent badge and update browser-first branding copy",
-    "status": "completed"
-  },
-  {
-    "content": "Redesign home hero with image A and reuse images B/C in suitable sections",
-    "status": "completed"
-  },
-  {
     "content": "Re-test updated UI flows and verify visual changes",
-    "status": "in_progress"
+    "status": "completed"
   }
 ]

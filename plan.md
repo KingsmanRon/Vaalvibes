@@ -2,7 +2,7 @@
 
 ## 1) Objectives
 - Deliver a branded **Vaal Vibes** web experience (**exact black/white/gold**) with both **Customer PWA** + **Admin Console**.
-- Core business flows (MVP, already delivered):
+- Core business flows (MVP, delivered):
   - Publish **menu / events / specials** (public).
   - Capture **customer signups + login**.
   - **Issue + display promo codes** in a customer wallet.
@@ -10,22 +10,21 @@
   - Provide an **admin console** to manage content/promos/campaigns and **validate/redeem** promo codes.
 - Keep integrations minimal and explicit:
   - **NO online payments / NO POS integration**.
-  - Any not-yet-live functionality must be clearly labeled **MOCKED** in UI.
+  - Any not-yet-live functionality must be clearly labeled **MOCKED** in UI:
     - Campaign dispatch
     - Customer QR promo display
     - Image uploads
     - Forgot password
+- Browser-first UX requirement (delivered):
+  - Keep technical PWA support (manifest + service worker) for offline shell/caching.
+  - Remove **all** installation prompting behavior/UI (no install CTA, no beforeinstallprompt handling).
 - Current status update:
   - **Phase 1 (Backend) — COMPLETED and smoke-tested**.
   - **Phase 2 (Frontend customer + admin) — COMPLETED**.
   - **Phase 3 (Verification / bug fixing / PWA checks) — COMPLETED**.
   - Testing Agent **iteration_2**: **backend 100%**, **frontend 100%**.
-  - **Post-MVP UI Revision — IN PROGRESS**:
-    - Keep technical PWA capability intact, but remove **installation prompts / install UI / install behavior**.
-    - Remove **“Made with Emergent”** badge.
-    - Redesign hero tile to **black background** using uploaded image **A (DSC_0585.jpg)**; remove the large headline label.
-    - Use uploaded images **B (DSC_0592.jpg)** and **C (DSC_0630 (1).jpg)** in other appropriate sections.
-    - Improve brand presence by **interchanging / reinforcing logo placement** across the UI.
+  - **Phase 4 (Post-MVP browser-first UI revision) — COMPLETED**.
+  - Testing Agent **iteration_3**: **frontend 100%** (no regressions).
 
 ---
 
@@ -94,7 +93,7 @@
 
 ### Phase 3 (COMPLETED): Verification, bug fixing, final polish
 **User stories**
-1. As a user, I can install Vaal Vibes on my phone and it feels app-like.
+1. As a user, I can use the app reliably across mobile/desktop.
 2. As a user, I can see an offline banner and still browse last-known content.
 3. As a customer, I can recover from network errors without losing my request form.
 4. As an admin, I can navigate dashboards quickly on mobile.
@@ -108,52 +107,54 @@
 - Testing Agent **iteration_2**: **backend 100%**, **frontend 100%**.
 
 
-### Phase 4 (IN PROGRESS): Post-MVP UI revision (browser-first UX)
+### Phase 4 (COMPLETED): Post-MVP browser-first UI revision
 **Goal**
 - Keep the underlying PWA technical pieces (manifest/service worker) but remove **all install-request behavior/UI**.
 - Remove Emergent branding badge.
-- Refresh hero and imagery using new uploaded photos.
+- Refresh hero and imagery using newly uploaded photos.
 
-**Work items**
-1. **Remove install prompt and installation behaviors (keep technical PWA files)**
-   - Remove the in-app “Install Vaal Vibes” prompt UI.
-   - Remove the `beforeinstallprompt` listener + related localStorage visit-count tracking.
-   - Keep `manifest.json` and `sw.js` in place (browser-only UX, no install nagging).
+**Delivered**
+1. **Removed install prompt and installation behaviors (kept technical PWA files)**
+   - Removed in-app “Install Vaal Vibes” prompt UI.
+   - Removed the `beforeinstallprompt` listener + visit-count tracking.
+   - Kept `manifest.json` and `sw.js` in place.
 
-2. **Remove “Made with Emergent” badge**
-   - Remove (or hide) the fixed Emergent badge element in `public/index.html`.
+2. **Removed “Made with Emergent”**
+   - Removed the badge markup from `public/index.html`.
+   - Added defensive CSS to hide any injected `#emergent-badge`.
 
 3. **Hero tile redesign (Home page)**
-   - Replace current hero background with uploaded image **A: DSC_0585.jpg**.
-   - Make hero section **black background** with the photo used as the visual element.
-   - Remove the large hero label text: **“Nightlife energy. Gold-standard hospitality.”**
-   - Preserve quick CTAs (Menu / Reserve / Events) and premium vibe styling.
+   - Rebuilt hero to a **black** layout.
+   - Uses uploaded image **A** (`vv-hero-shot.jpg`) as the hero feature image.
+   - Removed the large hero headline label (previously “Nightlife energy. Gold-standard hospitality.”).
 
-4. **Use new photography elsewhere**
-   - Add uploaded image **B: DSC_0592.jpg** in a suitable section:
-     - Suggestion: Specials section header image or a featured “Bottle service” card.
-   - Add uploaded image **C: DSC_0630 (1).jpg** in a suitable section:
-     - Suggestion: Events section card imagery or “Hours & Location / Venue experience” card.
-   - Ensure images are optimized for performance and cropped consistently.
+4. **Used new photography elsewhere**
+   - Uploaded image **B** (`vv-bottle-shot.jpg`) used in the **Specials** section.
+   - Uploaded image **C** (`vv-bar-shot.jpg`) used in **Hours & Location / Venue** section.
 
-5. **Interchange / strengthen logo placement**
-   - Use uploaded `Logo.png` in more than one location (e.g., home hero corner watermark, admin sidebar header, login cards).
-   - Keep logo usage subtle and premium (no clutter).
+5. **Reinforced logo placement**
+   - Adopted the full uploaded logo (`vv-logo-full.png`) in hero + brand badge areas for stronger presence.
 
 6. **Regression testing**
-   - Re-run customer and admin flows after UI changes.
-   - Verify no console errors; ensure caching/offline behavior unaffected.
+   - Testing Agent **iteration_3**: **frontend 100%**; confirms:
+     - No install prompts
+     - Emergent badge removed/hidden
+     - Updated hero + images present
+     - Core navigation and customer flows still functional
 
 ---
 
 ## 3) Next Actions (immediate)
-1. Remove install prompt UI + all install-trigger logic, leaving manifest/service worker intact.
-2. Remove “Made with Emergent” badge from `public/index.html`.
-3. Update Home hero tile:
-   - Use `DSC_0585.jpg` and remove the large headline label.
-4. Place `DSC_0592.jpg` and `DSC_0630 (1).jpg` in appropriate sections (specials/events/admin header as applicable).
-5. Adjust logo placement for stronger brand presence.
-6. Re-run testing agent to confirm 100% pass remains.
+1. Handoff-ready documentation:
+   - Confirm demo credentials and MFA code are shared with stakeholders.
+   - List MOCKED features explicitly (campaign dispatch, QR promo display, image uploads, forgot password).
+2. Optional enhancements (post-MVP):
+   - Replace demo MFA with real TOTP.
+   - Add real email dispatch (SES) + unsubscribe flows.
+   - Add real image uploads (R2/S3) with resizing.
+   - Expand and normalize menu catalog ingestion (full PDF coverage) + search.
+3. Operational hardening:
+   - Add rate limits + structured logging, if needed.
 
 ---
 
@@ -164,15 +165,17 @@
   - No prohibited gradients; no `transition: all`.
 - Browser-first behavior:
   - **No install prompt**, no install CTA, no install-related nags.
-  - PWA technical assets may remain, but **installation requests are removed**.
+  - PWA technical assets remain for offline/caching support.
 - Visual updates:
-  - Hero tile uses **DSC_0585.jpg** with black background treatment.
-  - Uploaded images **B** and **C** are used elsewhere appropriately.
-  - “Made with Emergent” badge removed.
+  - Hero tile uses **vv-hero-shot.jpg** with black background treatment.
+  - Uploaded images **vv-bottle-shot.jpg** and **vv-bar-shot.jpg** used appropriately.
+  - “Made with Emergent” removed/hidden.
   - Logo presence enhanced tastefully.
 - Core flows still work end-to-end:
   - Customer: register/login, wallet promo display, request submission.
   - Admin: login (demo OTP), CRUD, promo validate/redeem.
 - Testability:
   - `data-testid` coverage retained for primary actions.
-  - Clean end-to-end test run after Phase 4 changes.
+  - Verified test runs:
+    - iteration_2: backend 100% + frontend 100%
+    - iteration_3: frontend 100% after browser-first UI revision
