@@ -11,10 +11,8 @@ import {
   ChevronRight,
   ClipboardCheck,
   Clock3,
-  Download,
   Home,
   LayoutDashboard,
-  LogIn,
   LogOut,
   MapPin,
   Megaphone,
@@ -22,7 +20,6 @@ import {
   Moon,
   Plus,
   Search,
-  Shield,
   SunMedium,
   Ticket,
   TicketPercent,
@@ -32,7 +29,6 @@ import {
   UtensilsCrossed,
   Wallet,
   WifiOff,
-  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -88,13 +84,16 @@ const CUSTOMER_USER_KEY = "vv-customer-user";
 const ADMIN_TOKEN_KEY = "vv-admin-token";
 const ADMIN_USER_KEY = "vv-admin-user";
 const BOOTSTRAP_CACHE_KEY = "vv-bootstrap-cache";
-const VISIT_COUNT_KEY = "vv-visit-count";
+const HERO_IMAGE = "/vv-hero-shot.jpg";
+const SPECIAL_FEATURE_IMAGE = "/vv-bottle-shot.jpg";
+const VENUE_FEATURE_IMAGE = "/vv-bar-shot.jpg";
+const FULL_LOGO_IMAGE = "/vv-logo-full.png";
 
 const defaultBootstrap = {
   venue_name: "Vaal Vibes",
   tagline: "Nightlife, braai plates, and premium table vibes.",
-  logo_url: "/logo.png",
-  hero_image_url: "/banner.png",
+  logo_url: FULL_LOGO_IMAGE,
+  hero_image_url: HERO_IMAGE,
   menu: [],
   events: [],
   specials: [],
@@ -241,8 +240,6 @@ function AppShell() {
   const [requestReference, setRequestReference] = useState("");
   const [requestDraft, setRequestDraft] = useState(requestSeed);
   const [selectedSpecial, setSelectedSpecial] = useState(null);
-  const [installPromptEvent, setInstallPromptEvent] = useState(null);
-  const [showInstallPrompt, setShowInstallPrompt] = useState(false);
   const [adminSheetOpen, setAdminSheetOpen] = useState(false);
 
   const isAdminRoute = location.pathname.startsWith("/admin");
@@ -364,22 +361,6 @@ function AppShell() {
     };
   }, []);
 
-  useEffect(() => {
-    const visits = Number(localStorage.getItem(VISIT_COUNT_KEY) || "0") + 1;
-    localStorage.setItem(VISIT_COUNT_KEY, String(visits));
-
-    const handleBeforeInstallPrompt = (event) => {
-      event.preventDefault();
-      setInstallPromptEvent(event);
-      if (visits >= 2) {
-        setShowInstallPrompt(true);
-      }
-    };
-
-    window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
-    return () => window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
-  }, []);
-
   const logoutCustomer = (silent = false) => {
     setCustomerToken("");
     setCustomerUser(null);
@@ -473,14 +454,6 @@ function AppShell() {
     } catch (error) {
       toast.error(error.response?.data?.detail || "Unable to send request right now.");
     }
-  };
-
-  const installApp = async () => {
-    if (!installPromptEvent) return;
-    installPromptEvent.prompt();
-    await installPromptEvent.userChoice;
-    setShowInstallPrompt(false);
-    setInstallPromptEvent(null);
   };
 
   if (isAdminRoute && location.pathname === "/admin/login") {
@@ -656,7 +629,6 @@ function AppShell() {
         onReset={resetRequestDrawer}
         customerProfile={customerProfile}
       />
-      {showInstallPrompt && installPromptEvent && <InstallPromptCard onInstall={installApp} onDismiss={() => setShowInstallPrompt(false)} />}
     </div>
   );
 }
@@ -664,10 +636,10 @@ function AppShell() {
 function BrandBadge() {
   return (
     <div className="flex items-center gap-3" data-testid="brand-badge">
-      <img src="/logo.png" alt="Vaal Vibes logo" className="h-11 w-11 rounded-full border border-primary/35 object-cover" />
+      <img src={FULL_LOGO_IMAGE} alt="Vaal Vibes logo" className="h-11 w-auto object-contain" />
       <div>
-        <p className="font-display text-2xl leading-none text-white">Vaal Vibes</p>
-        <p className="text-xs text-muted-foreground">Premium nightlife PWA</p>
+        <p className="font-display text-xl leading-none text-white">Vaal Vibes</p>
+        <p className="text-xs text-muted-foreground">Premium nightlife web experience</p>
       </div>
     </div>
   );
@@ -694,35 +666,9 @@ function OfflineBanner() {
         <WifiOff className="h-4 w-4 text-primary" />
         <AlertTitle data-testid="offline-banner-title">Offline shell active</AlertTitle>
         <AlertDescription data-testid="offline-banner-description">
-          You are viewing cached Vaal Vibes content. New requests and edits need a connection before they can sync.
+          You are viewing cached Vaal Vibes content in your browser. New requests and edits need a connection before they can sync.
         </AlertDescription>
       </Alert>
-    </div>
-  );
-}
-
-function InstallPromptCard({ onInstall, onDismiss }) {
-  return (
-    <div className="fixed inset-x-0 bottom-24 z-[220] mx-auto w-[calc(100%-1.5rem)] max-w-md sm:bottom-6" data-testid="install-prompt-card">
-      <Card className="border-primary/25 bg-card/95 backdrop-blur-md vv-card-glow">
-        <CardContent className="flex items-center gap-4 p-4">
-          <div className="rounded-full border border-primary/25 bg-primary/10 p-3 text-primary">
-            <Download className="h-5 w-5" />
-          </div>
-          <div className="flex-1">
-            <p className="font-medium text-white">Install Vaal Vibes</p>
-            <p className="text-xs text-muted-foreground">Add the app to your home screen for faster access and offline browsing.</p>
-          </div>
-          <div className="flex gap-2">
-            <Button variant="ghost" size="sm" onClick={onDismiss} data-testid="install-prompt-dismiss-button">
-              Later
-            </Button>
-            <Button size="sm" onClick={onInstall} data-testid="install-prompt-install-button">
-              Install
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
     </div>
   );
 }
@@ -903,39 +849,42 @@ function HomePage({ bootstrap, loading, error, onOpenRequest, onOpenSpecial }) {
         </Alert>
       ) : null}
 
-      <section className="vv-noise vv-hero-sheen overflow-hidden rounded-[28px] border border-white/10 bg-card" data-testid="home-hero-section">
-        <div className="relative min-h-[360px] overflow-hidden">
-          <img src={bootstrap.hero_image_url || "/banner.png"} alt="Vaal Vibes venue hero" className="absolute inset-0 h-full w-full vv-image-cover opacity-50" />
-          <div className="absolute inset-0 bg-gradient-to-t from-[#111111] via-[#111111]/70 to-black/30" />
-          <div className="relative z-10 flex min-h-[360px] flex-col justify-end p-6 sm:p-8">
+      <section className="overflow-hidden rounded-[28px] border border-white/10 bg-black" data-testid="home-hero-section">
+        <div className="grid gap-6 p-6 sm:p-8 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
+          <div className="space-y-5">
             <Badge className="w-fit border-primary/25 bg-primary/15 px-3 py-1 text-primary" data-testid="hero-brand-badge">
               Premium venue • Pay at venue
             </Badge>
-            <h1 className="mt-4 max-w-md font-display text-5xl leading-[0.92] text-white sm:text-6xl" data-testid="hero-title">
-              Nightlife energy. Gold-standard hospitality.
-            </h1>
-            <p className="mt-4 max-w-md text-sm text-white/80" data-testid="hero-description">
-              Browse the Vaal Vibes menu, secure reservation requests, and unlock promos from one premium mobile-first experience.
+            <img src={FULL_LOGO_IMAGE} alt="Vaal Vibes full logo" className="h-24 w-auto max-w-full object-contain sm:h-28" data-testid="hero-logo-image" />
+            <p className="max-w-md text-sm text-white/75" data-testid="hero-description">
+              Browse the menu, book your table, and send order requests directly from your browser — all wrapped in the Vaal Vibes black-and-gold experience.
             </p>
             <HeroActions onOpenRequest={onOpenRequest} />
-            <div className="vv-divider mt-6" />
-            <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
-              {[
-                { label: "Menu categories", value: bootstrap.menu.length },
-                { label: "Upcoming events", value: bootstrap.events.length },
-                { label: "Live specials", value: bootstrap.specials.length },
-                { label: "Service note", value: "10% fee" },
-              ].map((item) => (
-                <Card key={item.label} className="border-white/10 bg-black/25 backdrop-blur-md">
-                  <CardContent className="p-4">
-                    <p className="text-xs text-muted-foreground">{item.label}</p>
-                    <p className="mt-2 text-lg font-semibold text-white" data-testid={`hero-stat-${item.label.toLowerCase().replace(/\s+/g, "-")}`}>
-                      {item.value}
-                    </p>
-                  </CardContent>
-                </Card>
-              ))}
+          </div>
+          <div className="rounded-[26px] border border-primary/15 bg-[#050505] p-3">
+            <div className="overflow-hidden rounded-[22px] bg-black">
+              <img src={HERO_IMAGE} alt="Vaal Vibes welcome shots" className="h-[320px] w-full vv-image-cover sm:h-[360px]" data-testid="hero-feature-image" />
             </div>
+          </div>
+        </div>
+        <div className="px-6 pb-6 sm:px-8 sm:pb-8">
+          <div className="vv-divider mb-5" />
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {[
+              { label: "Menu categories", value: bootstrap.menu.length },
+              { label: "Upcoming events", value: bootstrap.events.length },
+              { label: "Live specials", value: bootstrap.specials.length },
+              { label: "Service note", value: "10% fee" },
+            ].map((item) => (
+              <Card key={item.label} className="border-white/10 bg-[#0a0a0a] backdrop-blur-md">
+                <CardContent className="p-4">
+                  <p className="text-xs text-muted-foreground">{item.label}</p>
+                  <p className="mt-2 text-lg font-semibold text-white" data-testid={`hero-stat-${item.label.toLowerCase().replace(/\s+/g, "-")}`}>
+                    {item.value}
+                  </p>
+                </CardContent>
+              </Card>
+            ))}
           </div>
         </div>
       </section>
@@ -952,10 +901,12 @@ function HomePage({ bootstrap, loading, error, onOpenRequest, onOpenSpecial }) {
           }
         />
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {bootstrap.specials.map((special) => (
+          {bootstrap.specials.map((special, index) => {
+            const specialImage = index === 0 ? SPECIAL_FEATURE_IMAGE : special.image_url || "/banner.png";
+            return (
             <Card key={special.id} className="group overflow-hidden border-white/10 bg-card transition-colors hover:border-primary/40" data-testid="special-card">
               <div className="relative h-44 overflow-hidden">
-                <img src={special.image_url || "/banner.png"} alt={special.title} className="h-full w-full vv-image-cover transition-transform duration-300 group-hover:scale-[1.03]" />
+                <img src={specialImage} alt={special.title} className="h-full w-full vv-image-cover transition-transform duration-300 group-hover:scale-[1.03]" />
                 <div className="absolute inset-0 bg-gradient-to-t from-[#111111] to-transparent" />
               </div>
               <CardContent className="space-y-4 p-5">
@@ -976,7 +927,8 @@ function HomePage({ bootstrap, loading, error, onOpenRequest, onOpenSpecial }) {
                 </Button>
               </CardContent>
             </Card>
-          ))}
+          );
+          })}
         </div>
       </section>
 
@@ -1042,7 +994,12 @@ function HomePage({ bootstrap, loading, error, onOpenRequest, onOpenSpecial }) {
             </Button>
           </CardContent>
         </Card>
-        <Card className="border-white/10 bg-card">
+        <Card className="overflow-hidden border-white/10 bg-card">
+          <div className="relative h-40 overflow-hidden border-b border-white/10 bg-black">
+            <img src={VENUE_FEATURE_IMAGE} alt="Vaal Vibes bar scene" className="h-full w-full vv-image-cover opacity-80" />
+            <div className="absolute inset-0 bg-gradient-to-t from-[#111111] via-[#111111]/45 to-transparent" />
+            <img src={FULL_LOGO_IMAGE} alt="Vaal Vibes logo" className="absolute bottom-4 left-4 h-10 w-auto object-contain" />
+          </div>
           <CardHeader>
             <CardTitle className="font-display text-3xl text-white">Hours & location</CardTitle>
             <CardDescription>{bootstrap.service_note}</CardDescription>
