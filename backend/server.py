@@ -441,6 +441,17 @@ async def issue_welcome_promo(user_id: str) -> PromoCode:
     await db.promo_codes.insert_one(promo.model_dump())
     return promo
 
+async def repair_promo_signatures() -> None:
+    promos = await db.promo_codes.find({}, {"_id": 0}).to_list(length=1000)
+    for promo in promos:
+        expected_signature = promo_signature(promo["code"], promo["user_id"], promo["pool_id"])
+        if promo.get("signature") != expected_signature:
+            await db.promo_codes.update_one(
+                {"id": promo["id"]},
+                {"$set": {"signature": expected_signature}},
+            )
+
+
 
 async def validate_promo_logic(code: str, bill_amount: float) -> PromoValidationResponse:
     promo = await db.promo_codes.find_one({"code": code.upper()}, {"_id": 0})
@@ -1258,6 +1269,7 @@ logger = logging.getLogger(__name__)
 @app.on_event("startup")
 async def startup_tasks() -> None:
     await seed_database()
+    await repair_promo_signatures()
     logger.info("Vaal Vibes API startup complete")
 
 

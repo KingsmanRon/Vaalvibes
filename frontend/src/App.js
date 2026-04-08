@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { cloneElement, isValidElement, useEffect, useMemo, useState } from "react";
 import "@/App.css";
 import { BrowserRouter, Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import axios from "axios";
@@ -343,10 +343,12 @@ function AppShell() {
     loadBootstrap();
   }, []);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     loadCustomerData(customerToken);
   }, [customerToken]);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     loadAdminData(adminToken);
   }, [adminToken]);
@@ -1117,7 +1119,7 @@ function MenuPage({ bootstrap, loading, onAddToRequest }) {
                   <CardDescription>{category.description}</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <Accordion type="multiple" className="w-full space-y-3">
+                  <Accordion type="multiple" defaultValue={Object.keys(groups).map((groupName) => `${category.slug}-${groupName}`)} className="w-full space-y-3">
                     {Object.entries(groups).map(([groupName, items]) => (
                       <AccordionItem key={groupName} value={`${category.slug}-${groupName}`} className="overflow-hidden rounded-2xl border border-white/10 bg-black/20 px-4">
                         <AccordionTrigger className="text-base text-white">{groupName}</AccordionTrigger>
@@ -2648,10 +2650,16 @@ function SkeletonPanel() {
 }
 
 function Field({ label, children, testId }) {
+  const fieldChild = isValidElement(children)
+    ? cloneElement(children, {
+        "data-testid": testId,
+      })
+    : children;
+
   return (
-    <div className="space-y-2" data-testid={testId}>
+    <div className="space-y-2">
       <Label className="text-sm text-white">{label}</Label>
-      {children}
+      {fieldChild}
     </div>
   );
 }

@@ -1,18 +1,10 @@
 [
   {
-    "content": "Implement Vaal Vibes theme tokens, fonts, assets, and shared routing shells",
+    "content": "Validate PWA install/offline behaviors and final UX polish",
     "status": "in_progress"
   },
   {
-    "content": "Build customer PWA pages and wire public/customer data flows",
-    "status": "pending"
-  },
-  {
-    "content": "Build admin dashboard pages and wire management/promo flows",
-    "status": "pending"
-  },
-  {
-    "content": "Add PWA install/offline support and polish UX states",
+    "content": "Re-run comprehensive testing and fix remaining issues",
     "status": "pending"
   }
 ]
