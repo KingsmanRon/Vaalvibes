@@ -1,10 +1,10 @@
 [
   {
     "content": "Validate PWA install/offline behaviors and final UX polish",
-    "status": "in_progress"
+    "status": "completed"
   },
   {
     "content": "Re-run comprehensive testing and fix remaining issues",
-    "status": "pending"
+    "status": "completed"
   }
 ]

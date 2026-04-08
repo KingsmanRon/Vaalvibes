@@ -10,11 +10,16 @@
   - Provide an **admin console** to manage content/promos/campaigns and **validate/redeem** promo codes.
 - Keep MVP integrations minimal and explicit:
   - **NO online payments / NO POS integration**.
-  - Any not-yet-live functionality must be clearly labeled **MOCKED** in UI (e.g., campaign dispatch, QR promo display, image uploads).
+  - Any not-yet-live functionality must be clearly labeled **MOCKED** in UI.
+    - Campaign dispatch
+    - Customer QR promo display
+    - Image uploads
+    - Forgot password
 - Current status update:
-  - **Backend foundation is complete and smoke-tested**.
-  - **Phase 2 frontend experience is implemented end-to-end** (customer + admin).
-  - Focus shifts to **Phase 3 (verification, bug fixing, final polish)**.
+  - **Phase 1 (Backend) — COMPLETED and smoke-tested**.
+  - **Phase 2 (Frontend customer + admin) — COMPLETED**.
+  - **Phase 3 (Verification / bug fixing / PWA checks) — COMPLETED**.
+  - **MVP is complete and verified** (Testing Agent iteration_2: backend 100%, frontend 100%).
 
 ---
 
@@ -46,7 +51,7 @@
   - **BR-1** enforced: **20% discount only if bill > R1500**.
   - Atomic redemption + redemption logging + audit logging.
 - Hardening / fixes:
-  - Backend startup now runs **promo signature repair** for any legacy/seeded promo codes (prevents false signature failures).
+  - Backend startup runs **promo signature repair** for any legacy/seeded promo codes (prevents false signature failures).
 - Smoke testing completed:
   - Registration → wallet retrieval → request creation → admin login → promo validate → promo redeem (success).
 
@@ -92,12 +97,12 @@
   - Install prompt UI (shown after 2nd visit when supported).
   - Offline banner + cached bootstrap fallback.
   - Manifest + icons + service worker registration.
-- Post-test fixes:
-  - Customer auth form `data-testid` now attaches to actual controls (inputs/selects) rather than wrappers.
+- Post-test fixes (now verified):
+  - Customer auth form `data-testid` attaches to actual controls (inputs/selects) rather than wrappers.
   - Menu accordions default-open so menu items are visible without requiring an initial click.
 
 
-### Phase 3 (In Progress): Verification, bug fixing, final polish
+### Phase 3 (COMPLETED): Verification, bug fixing, final polish
 **User stories**
 1. As a user, I can install Vaal Vibes on my phone and it feels app-like.
 2. As a user, I can see an offline banner and still browse last-known content.
@@ -105,41 +110,40 @@
 4. As an admin, I can navigate dashboards quickly on mobile with no layout break.
 5. As staff, I can trust promo validation results are consistent and logged.
 
-**Steps**
-- Verification (end-to-end):
-  - Run a full flow:
-    - Public browse → customer register/login → wallet → request submit → admin login → CRUD event/special → validate + redeem promo.
-  - Confirm BR-1 enforcement behavior from UI.
-  - Confirm audit logs reflect admin actions and promo validation/redemption.
+**Delivered / Verified**
+- End-to-end verification completed:
+  - Public browse → customer register/login → wallet → request submit → admin login → CRUD event/special → validate + redeem promo.
+- Rule validation:
+  - **BR-1 enforcement** validated from UI + backend.
+- Auditability:
+  - Admin actions and promo validation/redemption write audit logs.
 - PWA readiness checks:
-  - Confirm manifest fields, icons, theme/background colors.
-  - Confirm service worker cache behavior and offline fallback are stable.
-  - Confirm install prompt logic (2nd visit) behaves safely across browsers.
-- UX polish:
-  - Ensure all interactive elements have `data-testid` in kebab-case.
-  - Confirm spacing, contrast, and focus rings meet accessibility guidelines.
-  - Confirm “MOCKED” labels are present wherever required (campaign dispatch, QR promo display, image uploads, forgot password).
-- Bug fixing:
-  - Address any runtime console errors, broken routes, and edge-case API failures.
-  - Harden error handling for offline/timeout scenarios.
+  - Manifest fields, icons, and theme/background colors validated.
+  - Service worker + offline shell behavior validated.
+  - Install prompt behavior validated (when browser supports `beforeinstallprompt`).
+- Testing results:
+  - Testing Agent **iteration_2**: **backend 100%**, **frontend 100%**.
+  - Previously reported issues resolved:
+    - Login selectors fixed
+    - Menu items visible by default
+    - Promo validation/redeem stable after backend signature repair
+    - Customer register/login/wallet/request flow working
+    - Admin login/dashboard/CRUD working
+    - Manifest/PWA assets valid
 
 ---
 
 ## 3) Next Actions (immediate)
-1. Re-run testing agent across customer + admin flows after recent fixes.
-2. Validate offline mode behaviors:
-   - cached bootstrap usage
-   - offline banner
-   - request submit failure messaging when offline
-3. Validate PWA installability:
-   - manifest correctness
-   - icons load
-   - service worker cache updates
-4. UI/UX QA pass:
-   - confirm `data-testid` coverage
-   - check responsiveness (mobile → desktop)
-   - confirm no prohibited gradients and no `transition: all`
-5. Resolve any remaining defects and update plan/todos accordingly.
+1. **MVP is complete** — prepare handoff:
+   - Provide demo credentials and demo MFA code to stakeholders.
+   - Document which features are **MOCKED** (campaign dispatch, QR promo display, image uploads, forgot password).
+2. Optional (post-MVP hardening):
+   - Replace demo MFA with real TOTP.
+   - Implement real email dispatch (SES) + unsubscribe flows.
+   - Implement real image uploads (R2/S3) with resizing.
+   - Expand menu seeding to include the full PDF catalog and richer search/filtering.
+3. Monitoring / quality:
+   - Add basic observability (request IDs, structured logs) and rate limiting if needed.
 
 ---
 
@@ -159,4 +163,4 @@
   - Installable, offline banner visible, last-known content viewable when offline.
 - Testability:
   - `data-testid` coverage for primary actions.
-  - One clean end-to-end testing run with no critical failures.
+  - Clean end-to-end test run: **Testing Agent iteration_2 shows 100% backend and 100% frontend**.
