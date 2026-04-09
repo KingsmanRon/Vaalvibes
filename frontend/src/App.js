@@ -87,10 +87,10 @@ const ADMIN_USER_KEY = "vv-admin-user";
 const BOOTSTRAP_CACHE_KEY = "vv-bootstrap-cache";
 const HERO_IMAGE = "/vibes.jpeg";
 const HUNGRY_PLATTER_IMAGE = "/vv-hungry-platter.jpg";
-const BOTTLE_BOOTH_IMAGE = "/icy.jpg";
-const FRIDAY_AFTER_DARK_IMAGE = "/LivePerfomance1.jpg";
+const BOTTLE_BOOTH_IMAGE = "/DSC_0697 (1).jpg";
+const FRIDAY_AFTER_DARK_IMAGE = "/fridayafterdark.PNG";
 const SPECIAL_FEATURE_IMAGE = "/birthdaybook.jpg";
-const VENUE_FEATURE_IMAGE = "/partybook.jpg";
+const VENUE_FEATURE_IMAGE = "/LivePerfomance1.jpg";
 const FULL_LOGO_IMAGE = "/vv-logo-full.png";
 
 const defaultBootstrap = {
@@ -874,21 +874,34 @@ function HomePage({ bootstrap, loading, error, onOpenRequest, onOpenSpecial }) {
       ) : null}
 
       <section className="overflow-hidden rounded-[28px] border border-white/10 bg-black" data-testid="home-hero-section">
-        <div className="grid gap-6 p-6 sm:p-8 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
-          <div className="space-y-5">
-            <Badge className="w-fit border-primary/25 bg-primary/15 px-3 py-1 text-primary" data-testid="hero-brand-badge">
-              Premium venue • Pay at venue
-            </Badge>
-            <img src={FULL_LOGO_IMAGE} alt="Vaal Vibes full logo" className="h-24 w-auto max-w-full object-contain sm:h-28" data-testid="hero-logo-image" />
-            <p className="max-w-md text-sm text-white/75" data-testid="hero-description">
+        <div className="p-6 sm:p-8">
+          {/* Mobile: badge+logo on left, image on right. Desktop: all text left, image right */}
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
+            <div className="space-y-4">
+              <Badge className="w-fit border-primary/25 bg-primary/15 px-3 py-1 text-primary" data-testid="hero-brand-badge">
+                Premium venue • Pay at venue
+              </Badge>
+              <img src={FULL_LOGO_IMAGE} alt="Vaal Vibes full logo" className="h-16 w-auto max-w-full object-contain sm:h-24 lg:h-28" data-testid="hero-logo-image" />
+              {/* Description + buttons shown inside left column on lg+ only */}
+              <div className="hidden lg:block space-y-4">
+                <p className="max-w-md text-sm text-white/75" data-testid="hero-description">
+                  Browse the menu, book your table, and send order requests directly from your browser — all wrapped in the Vaal Vibes black-and-gold experience.
+                </p>
+                <HeroActions onOpenRequest={onOpenRequest} />
+              </div>
+            </div>
+            <div className="rounded-[26px] border border-primary/15 bg-[#050505] p-2 sm:p-3">
+              <div className="overflow-hidden rounded-[22px] bg-black">
+                <img src={HERO_IMAGE} alt="Vaal Vibes welcome shots" className="h-[240px] w-full vv-image-cover scale-[1.05] sm:h-[300px] lg:h-[360px] lg:scale-[1.15]" data-testid="hero-feature-image" />
+              </div>
+            </div>
+          </div>
+          {/* Description + buttons shown below grid on mobile only */}
+          <div className="mt-5 space-y-3 lg:hidden">
+            <p className="text-sm text-white/75" data-testid="hero-description">
               Browse the menu, book your table, and send order requests directly from your browser — all wrapped in the Vaal Vibes black-and-gold experience.
             </p>
             <HeroActions onOpenRequest={onOpenRequest} />
-          </div>
-          <div className="rounded-[26px] border border-primary/15 bg-[#050505] p-3">
-            <div className="overflow-hidden rounded-[22px] bg-black">
-              <img src={HERO_IMAGE} alt="Vaal Vibes welcome shots" className="h-[320px] w-full vv-image-cover scale-[1.15] sm:h-[360px]" data-testid="hero-feature-image" />
-            </div>
           </div>
         </div>
         <div className="px-6 pb-6 sm:px-8 sm:pb-8">
@@ -996,34 +1009,32 @@ function HomePage({ bootstrap, loading, error, onOpenRequest, onOpenSpecial }) {
         </div>
       </section>
 
-      <section className="rounded-[28px] border border-white/10 bg-card p-6 sm:p-8">
-        <div className="grid gap-6 lg:grid-cols-[1fr_0.9fr] lg:items-center">
-          <div>
-            <SectionHeading
-              eyebrow="Celebrate"
-              title="Birthday bookings at Vaal Vibes"
-              description="Planning a birthday turn-up? Send your date, guest count, budget, and arrival time so the team can shape a booth, bottle, and food setup around your vibe."
-              action={
-                <Button asChild className="h-11" data-testid="birthday-section-cta-button">
-                  <Link to="/birthdays">Plan your birthday</Link>
-                </Button>
-              }
-            />
-            <div className="grid gap-3 sm:grid-cols-2">
-              {[
-                "VIP booths and bottle service options",
-                "Budget-aware planning for groups",
-                "Arrival-time coordination with the venue team",
-                "Space for decor, cake, and shout-out notes",
-              ].map((item) => (
-                <div key={item} className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white/80">
-                  {item}
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="overflow-hidden rounded-[24px] border border-primary/15 bg-black">
-            <img src="/partybook.jpg" alt="Birthday celebration at Vaal Vibes" className="h-[320px] w-full vv-image-cover" data-testid="birthday-section-image" />
+      <section className="overflow-hidden rounded-[28px] border border-white/10 bg-card">
+        <div className="overflow-hidden border-b border-primary/15 bg-black">
+          <img src="/partybook.jpg" alt="Birthday celebration at Vaal Vibes" className="h-[220px] w-full vv-image-cover sm:h-[280px]" data-testid="birthday-section-image" />
+        </div>
+        <div className="p-6 sm:p-8">
+          <SectionHeading
+            eyebrow="Celebrate"
+            title="Birthday bookings at Vaal Vibes"
+            description="Planning a birthday turn-up? Send your date, guest count, budget, and arrival time so the team can shape a booth, bottle, and food setup around your vibe."
+            action={
+              <Button asChild className="h-11" data-testid="birthday-section-cta-button">
+                <Link to="/birthdays">Plan your birthday</Link>
+              </Button>
+            }
+          />
+          <div className="grid gap-3 sm:grid-cols-2">
+            {[
+              "VIP booths and bottle service options",
+              "Budget-aware planning for groups",
+              "Arrival-time coordination with the venue team",
+              "Space for decor, cake, and shout-out notes",
+            ].map((item) => (
+              <div key={item} className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white/80">
+                {item}
+              </div>
+            ))}
           </div>
         </div>
       </section>

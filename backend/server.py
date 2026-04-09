@@ -601,11 +601,77 @@ async def validate_promo_logic(code: str, bill_amount: float) -> PromoValidation
 
 
 async def seed_database() -> None:
+    now = now_utc()
+
+    # Always refresh events and specials so content updates take effect on restart
+    events = [
+        EventItem(
+            title="Friday After Dark",
+            date=datetime(2026, 4, 11, 20, 0, 0, tzinfo=timezone.utc),
+            description="A premium Friday link-up with deep house selectors, bottle service tables, and late-night braai platters.",
+            lineup=["BINOBOY", "TROSHKA", "B&T MUSIQ", "LEMONADE"],
+            image_url="/fridayafterdark.PNG",
+            status="scheduled",
+            cta_label="RSVP Intent",
+        ),
+        EventItem(
+            title="Saturday",
+            date=datetime(2026, 4, 11, 18, 0, 0, tzinfo=timezone.utc),
+            description="Dress up, book a table, and step into a gold-lit Saturday with headline DJs and curated bottle moments.",
+            lineup=["Line-Up Coming Soon"],
+            image_url="/birthdaybook.jpg",
+            status="scheduled",
+            cta_label="Request Booking",
+        ),
+        EventItem(
+            title="Sunday Grill & Chill",
+            date=datetime(2026, 4, 14, 12, 0, 0, tzinfo=timezone.utc),
+            description="Come get your fitness on with our Tuesday League and Friendlies on Thursday.",
+            lineup=["14 & 16 April 2026"],
+            image_url="/soccer.jpg",
+            status="scheduled",
+            cta_label="Reserve Table",
+        ),
+    ]
+    specials = [
+        SpecialItem(
+            title="Hungry Platter Special",
+            description="The signature platter for your crew: chuck, wors, wings, liver, ribs plus pap, chakalaka, and salsa.",
+            price_label="R400.00",
+            image_url="/vv-hungry-platter.jpg",
+            available_until=now + timedelta(days=7),
+            tags=["share", "signature"],
+            status="active",
+        ),
+        SpecialItem(
+            title="Sunset Special",
+            description="Come join us for a smooth golden-hour.",
+            price_label="R150.00",
+            image_url="/corona1.jpg",
+            available_until=now + timedelta(days=5),
+            tags=["happy-hour"],
+            status="active",
+        ),
+        SpecialItem(
+            title="Bottle & Booth Night",
+            description="2 x Jägermeister only for R1000",
+            price_label="Special",
+            image_url="/DSC_0697 (1).jpg",
+            available_until=now + timedelta(days=10),
+            tags=["vip", "table-service"],
+            status="active",
+        ),
+    ]
+    await db.events.drop()
+    await db.specials.drop()
+    await db.events.insert_many([event.model_dump() for event in events])
+    await db.specials.insert_many([special.model_dump() for special in specials])
+
+    # Only seed static data once
     existing = await db.menu_categories.count_documents({})
     if existing > 0:
         return
 
-    now = now_utc()
     menu_categories = [
         MenuCategory(
             name="Food",
@@ -695,66 +761,6 @@ async def seed_database() -> None:
         ),
     ]
 
-    events = [
-        EventItem(
-            title="Friday After Dark",
-            date=now + timedelta(days=2),
-            description="A premium Friday link-up with deep house selectors, bottle service tables, and late-night braai platters.",
-            lineup=["DJ VYBZ", "Lelo House", "Mpho M"],
-            image_url="/LivePerfomance1.jpg",
-            status="scheduled",
-            cta_label="RSVP Intent",
-        ),
-        EventItem(
-            title="Champagne Saturday",
-            date=now + timedelta(days=5),
-            description="Dress up, book a table, and step into a gold-lit Saturday with headline DJs and curated bottle moments.",
-            lineup=["Nox x Lux", "AmaPiano Room", "Guest MC Sedi"],
-            image_url="/partybook.jpg",
-            status="scheduled",
-            cta_label="Request Booking",
-        ),
-        EventItem(
-            title="Sunday Grill & Chill",
-            date=now + timedelta(days=8),
-            description="Daytime braai platters, cocktails, and relaxed vibes with family-style seating and lighter music energy.",
-            lineup=["Resident DJ KJ"],
-            image_url="/LivePerfomance1.jpg",
-            status="scheduled",
-            cta_label="Reserve Table",
-        ),
-    ]
-
-    specials = [
-        SpecialItem(
-            title="Hungry Platter Special",
-            description="The signature platter for your crew: chuck, wors, wings, liver, ribs plus pap, chakalaka, and salsa.",
-            price_label="R400.00",
-            image_url="/vv-hungry-platter.jpg",
-            available_until=now + timedelta(days=7),
-            tags=["share", "signature"],
-            status="active",
-        ),
-        SpecialItem(
-            title="Sunset Special",
-            description="Start the golden hour in style.",
-            price_label="R150.00",
-            image_url="/corona1.jpg",
-            available_until=now + timedelta(days=5),
-            tags=["happy-hour"],
-            status="active",
-        ),
-        SpecialItem(
-            title="Bottle & Booth Night",
-            description="2 x Jägermeister for R1000. Reserve a booth and choose a premium bottle package for your table.",
-            price_label="Special",
-            image_url="/icy.jpg",
-            available_until=now + timedelta(days=10),
-            tags=["vip", "table-service"],
-            status="active",
-        ),
-    ]
-
     promo_pool = PromoPool(
         name="Welcome Gold 20%",
         discount_type="percentage",
@@ -814,8 +820,6 @@ async def seed_database() -> None:
     }
 
     await db.menu_categories.insert_many([category.model_dump() for category in menu_categories])
-    await db.events.insert_many([event.model_dump() for event in events])
-    await db.specials.insert_many([special.model_dump() for special in specials])
     await db.promo_pools.insert_one(promo_pool.model_dump())
     await db.campaigns.insert_many([campaign.model_dump() for campaign in campaigns])
     await db.admin_users.insert_many(admin_users)
@@ -858,7 +862,7 @@ async def get_public_bootstrap() -> PublicBootstrapResponse:
             "Sat · 12:00 - 02:00",
             "Sun · 12:00 - 21:00",
         ],
-        service_note="A 10% service fee is always added onto your bill. No online payments in app — pay at venue.",
+        service_note="Where Luxury Lifestyle meets exceptional Vibes 16 Fraser Street, Vanderbijlpark, Gauteng 1900",
     )
 
 
