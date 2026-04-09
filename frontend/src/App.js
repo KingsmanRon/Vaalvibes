@@ -312,26 +312,6 @@ function AppShell() {
     }
   }, [navigate]);
 
-  const loadBootstrap = async () => {
-    setBootstrapLoading(true);
-    try {
-      const response = await api.get("/public/bootstrap");
-      setBootstrap(response.data);
-      writeStorage(BOOTSTRAP_CACHE_KEY, response.data);
-      setBootstrapError("");
-    } catch (error) {
-      const cached = readStorage(BOOTSTRAP_CACHE_KEY, defaultBootstrap);
-      setBootstrap(cached);
-      setBootstrapError(
-        cached?.menu?.length
-          ? "Offline mode: showing last synced content."
-          : "Unable to load Vaal Vibes content right now.",
-      );
-    } finally {
-      setBootstrapLoading(false);
-    }
-  };
-
   const loadCustomerData = useCallback(async (token = customerToken) => {
     if (!token) {
       setCustomerProfile(null);
@@ -441,7 +421,14 @@ function AppShell() {
     setRequestDrawerOpen(true);
     toast.success(`${item.name} added to request.`);
   };
-
+  
+  const saveCustomerSession = (payload) => {
+    localStorage.setItem(CUSTOMER_TOKEN_KEY, payload.access_token);
+    writeStorage(CUSTOMER_USER_KEY, payload);
+    setCustomerToken(payload.access_token);
+    setCustomerUser(payload);
+  };
+  
   const openReservationRequest = (sourceLabel) => {
     setRequestDraft((current) => ({
       ...current,
