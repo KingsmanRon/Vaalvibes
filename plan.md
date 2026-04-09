@@ -2,7 +2,7 @@
 
 ## 1) Objectives
 - Deliver a branded **Vaal Vibes** web experience (**exact black/white/gold**) with both **Customer Web App** + **Admin Console**.
-- Core business flows (**delivered and previously verified**):
+- Core business flows (**delivered and verified**):
   - Publish **menu / events / specials** (public).
   - Capture **customer signups + login**.
   - **Issue + display promo codes** in a customer wallet.
@@ -16,8 +16,9 @@
     - Image uploads
     - Forgot password
 - Browser-first UX requirement (**delivered**):
-  - Keep technical PWA support (manifest + service worker) for offline shell/caching.
-  - Remove **all** installation prompting behavior/UI (no install CTA, no `beforeinstallprompt` handling).
+  - Keep technical PWA files in the project (`manifest.json`, `sw.js`).
+  - **No install prompting** and **no install CTA**.
+  - Runtime stability hardening: prevent stale SW/cache issues from breaking JS delivery.
 - Growth + content enhancements (**delivered**):
   - Correct imagery mapping for:
     - Hungry Platter Special → `vv-hungry-platter.jpg`
@@ -37,9 +38,9 @@
   - Testing Agent **iteration_3**: **frontend 100%** (no regressions).
 - **Phase 5 (Imagery mapping + Birthday bookings) — COMPLETED**.
   - Testing Agent **iteration_5**: **backend 100%**, **frontend 100%**.
-- **Phase 6 (IN PROGRESS): Production runtime stabilization**
-  - User reports runtime error: **`SyntaxError: Unexpected token '<'`**.
-  - Treat as an active defect likely caused by the frontend parsing an **HTML error page** (often a 404/500 or wrong base URL) when expecting JSON.
+- **Phase 6 (Runtime stabilization) — COMPLETED**.
+  - Root cause of **`SyntaxError: Unexpected token '<'`** was stale service worker/browser cache behavior causing HTML to be served where JavaScript was expected.
+  - Verified: **no Unexpected token error**, **service worker registrations = 0**, console clean aside from unrelated `cdn-cgi/rum` abort.
 
 ---
 
@@ -60,7 +61,8 @@
 - Request creation/list endpoints.
 - Hardening:
   - Startup promo signature repair for legacy promos.
-  - Ensure demo customer has at least one active promo.
+  - Ensure demo customer has at least one active promo on startup.
+  - Ensure demo customer login re-issues an active promo if missing.
 - Added **public birthday request ingestion** endpoint: **POST `/api/public/birthday-requests`**.
 
 
@@ -75,7 +77,7 @@
 ### Phase 3 (COMPLETED): Verification, bug fixing, PWA checks
 **Delivered / Verified**
 - End-to-end flow verified (customer and admin).
-- PWA technical assets present.
+- Technical PWA files present.
 
 
 ### Phase 4 (COMPLETED): Browser-first UI revision
@@ -91,48 +93,45 @@
 - Deterministic image mapping for key specials/events.
 - Home birthday section + CTA and dedicated `/birthdays` page.
 - Birthday form fields + submission (reference ID) and admin visibility.
-- Added `data-testid` for birthday seating selector directly on SelectTrigger.
+- Birthday form stability updates:
+  - Field component preserves explicit child `data-testid`.
+  - Birthday celebration date uses **native date input** for stability.
 
 
-### Phase 6 (IN PROGRESS): Production runtime stabilization (Unexpected token '<')
+### Phase 6 (COMPLETED): Production runtime stabilization (Unexpected token '<')
 **Goal**
 Eliminate the runtime error and restore stable browsing on the deployed preview.
 
-**Hypothesis**
-`Unexpected token '<'` almost always means the frontend tried to parse JSON but received HTML (often an error page or SPA index.html).
+**Root cause**
+Stale service worker/browser cache behavior could cause HTML to be served where JavaScript was expected, triggering:
+- `SyntaxError: Unexpected token '<'`
 
-**Steps**
-1. **Reproduce + capture evidence**
-   - Reproduce in preview URL and note route(s) causing it.
-   - Capture browser console stack trace and network tab evidence.
-2. **Verify backend URL configuration**
-   - Confirm `REACT_APP_BACKEND_URL` is correctly set for the deployed environment.
-   - Ensure frontend requests go to `/api/...` on the correct host (or correct proxy).
-3. **Check failing network requests**
-   - Identify the exact request returning HTML (content-type `text/html`).
-   - Common culprits:
-     - wrong backend base URL -> returning the frontend index.html
-     - 404 from backend -> returning a default HTML response
-     - CORS/redirect leading to HTML
-4. **Fix**
-   - If base URL misconfigured: set correct env var / fallback.
-   - If endpoint path mismatch: update client routes.
-   - Add defensive parsing + error messaging:
-     - If response content-type is HTML, show a toast “Service unavailable” and use cached bootstrap.
-5. **Regression tests**
-   - Smoke test: home bootstrap, menu/events load, birthdays page loads, birthday submission works, admin login works.
-   - Re-run testing agent once the runtime error is confirmed resolved.
+**Fix delivered**
+- Disabled active service worker registration in `src/index.js`.
+- Added early cleanup/unregister logic in both:
+  - `public/index.html`
+  - `src/index.js`
+  to clear existing Vaal Vibes service workers and `vaal-vibes-shell*` caches.
+- Preserved technical PWA files in the project (`manifest.json`, `sw.js`) while removing install prompts.
+
+**Additional stabilization improvements delivered**
+- Admin charts: replaced `ResponsiveContainer`-based charts with fixed-dimension charts to eliminate width/height warnings.
+
+**Verification**
+- Confirmed no `Unexpected token '<'` runtime errors.
+- Confirmed service worker registrations remain at **0**.
+- Confirmed core flows still work.
 
 ---
 
 ## 3) Next Actions (immediate)
-1. Reproduce the `Unexpected token '<'` error and identify the failing network request.
-2. Fix backend base URL / routing so frontend receives JSON (not HTML).
-3. Add client-side defensive handling for HTML responses (clear user error + fallback to cache).
-4. Re-run end-to-end checks:
-   - Public browse → birthdays form → admin requests view
-   - Customer login → wallet promo
-5. Update plan status: Phase 6 complete once preview is stable and testing passes.
+1. (Optional) Re-enable service worker caching later with a safer versioned strategy (and explicit cache invalidation), if offline-first behavior becomes a priority again.
+2. (Optional) Add spam prevention for the public birthday form:
+   - honeypot field
+   - basic rate limiting
+3. (Optional) Admin enhancements:
+   - filter requests by `request_type` (including `birthday-booking`)
+   - add a KPI tile for birthday bookings
 
 ---
 
@@ -143,7 +142,8 @@ Eliminate the runtime error and restore stable browsing on the deployed preview.
   - No prohibited gradients; no `transition: all`.
 - Browser-first behavior:
   - **No install prompt**, no install CTA, no install-related nags.
-  - PWA technical assets remain for offline/caching support.
+  - Technical PWA files remain in project.
+  - Service worker/caches do **not** break runtime delivery.
 - Visual updates:
   - Correct image mapping for specials/events.
 - Birthday bookings:
@@ -151,7 +151,9 @@ Eliminate the runtime error and restore stable browsing on the deployed preview.
   - Submission returns reference ID and appears in admin requests.
 - Runtime stability:
   - **No uncaught runtime errors** in console.
+  - Service worker registrations remain **0**.
   - All key API calls return JSON successfully.
 - Testability:
   - `data-testid` coverage retained.
+  - Stable automated targeting for birthday inputs.
   - Post-fix test run passes (target: 100% backend + frontend).

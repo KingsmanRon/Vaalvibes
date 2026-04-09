@@ -1,14 +1,10 @@
 [
   {
-    "content": "Reproduce the runtime error and identify the failing request/stack trace",
-    "status": "completed"
-  },
-  {
-    "content": "Fix the root cause of the Unexpected token '<' error",
+    "content": "Fix low-priority admin chart dimension warnings and run final verification",
     "status": "completed"
   },
   {
     "content": "Re-test public/customer/admin flows after the fix",
-    "status": "in_progress"
+    "status": "completed"
   }
 ]

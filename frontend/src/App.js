@@ -70,7 +70,7 @@ import {
 import { Toaster, toast } from "@/components/ui/sonner";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
-import { ResponsiveContainer, LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip as ChartTooltip, BarChart, Bar } from "recharts";
+import { LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip as ChartTooltip, BarChart, Bar } from "recharts";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -2042,6 +2042,8 @@ function SpecialDialog({ special, onOpenChange, onRequest }) {
 }
 
 function AdminDashboardPage({ dashboard, requests, loading }) {
+  const chartWidth = Math.max(280, Math.min(560, (typeof window !== "undefined" ? window.innerWidth : 920) - 220));
+
   if (loading || !dashboard) {
     return <SkeletonPanel />;
   }
@@ -2064,32 +2066,28 @@ function AdminDashboardPage({ dashboard, requests, loading }) {
           <CardHeader>
             <CardTitle className="text-lg text-white">Redemptions over time</CardTitle>
           </CardHeader>
-          <CardContent className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={dashboard.redemptions_over_time}>
-                <CartesianGrid stroke="rgba(255,255,255,0.08)" strokeDasharray="3 3" />
-                <XAxis dataKey="name" stroke="#B5B5B5" fontSize={12} />
-                <YAxis stroke="#B5B5B5" fontSize={12} />
-                <ChartTooltip contentStyle={{ background: "#1A1A1A", borderColor: "#2A2A2A", borderRadius: 16, color: "#fff" }} />
-                <Line type="monotone" dataKey="value" stroke="#F5C518" strokeWidth={3} dot={{ fill: "#F5C518" }} />
-              </LineChart>
-            </ResponsiveContainer>
+          <CardContent className="h-72 overflow-x-auto">
+            <LineChart width={chartWidth} height={260} data={dashboard.redemptions_over_time}>
+              <CartesianGrid stroke="rgba(255,255,255,0.08)" strokeDasharray="3 3" />
+              <XAxis dataKey="name" stroke="#B5B5B5" fontSize={12} />
+              <YAxis stroke="#B5B5B5" fontSize={12} />
+              <ChartTooltip contentStyle={{ background: "#1A1A1A", borderColor: "#2A2A2A", borderRadius: 16, color: "#fff" }} />
+              <Line type="monotone" dataKey="value" stroke="#F5C518" strokeWidth={3} dot={{ fill: "#F5C518" }} />
+            </LineChart>
           </CardContent>
         </Card>
         <Card className="border-white/10 bg-card">
           <CardHeader>
             <CardTitle className="text-lg text-white">Request breakdown</CardTitle>
           </CardHeader>
-          <CardContent className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={dashboard.request_breakdown}>
-                <CartesianGrid stroke="rgba(255,255,255,0.08)" strokeDasharray="3 3" />
-                <XAxis dataKey="name" stroke="#B5B5B5" fontSize={12} />
-                <YAxis stroke="#B5B5B5" fontSize={12} />
-                <ChartTooltip contentStyle={{ background: "#1A1A1A", borderColor: "#2A2A2A", borderRadius: 16, color: "#fff" }} />
-                <Bar dataKey="value" fill="#F5C518" radius={[10, 10, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+          <CardContent className="h-72 overflow-x-auto">
+            <BarChart width={chartWidth} height={260} data={dashboard.request_breakdown}>
+              <CartesianGrid stroke="rgba(255,255,255,0.08)" strokeDasharray="3 3" />
+              <XAxis dataKey="name" stroke="#B5B5B5" fontSize={12} />
+              <YAxis stroke="#B5B5B5" fontSize={12} />
+              <ChartTooltip contentStyle={{ background: "#1A1A1A", borderColor: "#2A2A2A", borderRadius: 16, color: "#fff" }} />
+              <Bar dataKey="value" fill="#F5C518" radius={[10, 10, 0, 0]} />
+            </BarChart>
           </CardContent>
         </Card>
       </div>
