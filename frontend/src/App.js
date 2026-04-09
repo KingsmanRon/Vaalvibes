@@ -85,12 +85,12 @@ const CUSTOMER_USER_KEY = "vv-customer-user";
 const ADMIN_TOKEN_KEY = "vv-admin-token";
 const ADMIN_USER_KEY = "vv-admin-user";
 const BOOTSTRAP_CACHE_KEY = "vv-bootstrap-cache";
-const HERO_IMAGE = "/vv-hero-shot.jpg";
+const HERO_IMAGE = "/vibes.jpeg";
 const HUNGRY_PLATTER_IMAGE = "/vv-hungry-platter.jpg";
-const BOTTLE_BOOTH_IMAGE = "/vv-bottle-booth.jpg";
-const FRIDAY_AFTER_DARK_IMAGE = "/vv-friday-after-dark.jpg";
-const SPECIAL_FEATURE_IMAGE = "/vv-bottle-shot.jpg";
-const VENUE_FEATURE_IMAGE = "/vv-bar-shot.jpg";
+const BOTTLE_BOOTH_IMAGE = "/icy.jpg";
+const FRIDAY_AFTER_DARK_IMAGE = "/LivePerfomance1.jpg";
+const SPECIAL_FEATURE_IMAGE = "/birthdaybook.jpg";
+const VENUE_FEATURE_IMAGE = "/partybook.jpg";
 const FULL_LOGO_IMAGE = "/vv-logo-full.png";
 
 const defaultBootstrap = {
@@ -221,7 +221,10 @@ const getEventFeatureImage = (event) => {
   if (event?.title === "Friday After Dark") {
     return FRIDAY_AFTER_DARK_IMAGE;
   }
-  return event?.image_url || HERO_IMAGE;
+  if (event?.title === "Party Yama 2000") {
+    return "/fridayafterdark.PNG";
+  }
+  return event?.image_url || FRIDAY_AFTER_DARK_IMAGE;
 };
 
 function App() {
@@ -1020,7 +1023,7 @@ function HomePage({ bootstrap, loading, error, onOpenRequest, onOpenSpecial }) {
             </div>
           </div>
           <div className="overflow-hidden rounded-[24px] border border-primary/15 bg-black">
-            <img src={BOTTLE_BOOTH_IMAGE} alt="Birthday bottle booth setup" className="h-[320px] w-full vv-image-cover" data-testid="birthday-section-image" />
+            <img src="/partybook.jpg" alt="Birthday celebration at Vaal Vibes" className="h-[320px] w-full vv-image-cover" data-testid="birthday-section-image" />
           </div>
         </div>
       </section>
@@ -1324,7 +1327,7 @@ function BirthdayPage() {
             </div>
           </div>
           <div className="overflow-hidden rounded-[24px] border border-primary/15 bg-black">
-            <img src={FRIDAY_AFTER_DARK_IMAGE} alt="Birthday crowd at Vaal Vibes" className="h-[360px] w-full vv-image-cover" data-testid="birthday-page-image" />
+            <img src="/partybook.jpg" alt="Birthday crowd at Vaal Vibes" className="h-[360px] w-full vv-image-cover" data-testid="birthday-page-image" />
           </div>
         </div>
       </section>
@@ -2040,7 +2043,7 @@ function SpecialDialog({ special, onOpenChange, onRequest }) {
               <DialogDescription>{special.price_label}</DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
-              <img src={special.image_url || "/banner.png"} alt={special.title} className="h-56 w-full rounded-3xl vv-image-cover" />
+              <img src={special.image_url || "/vibes.jpeg"} alt={special.title} className="h-56 w-full rounded-3xl vv-image-cover" />
               <p className="text-sm text-muted-foreground">{special.description}</p>
               <div className="flex flex-wrap gap-2">
                 {(special.tags || []).map((tag) => (
@@ -2142,7 +2145,7 @@ function AdminDashboardPage({ dashboard, requests, loading }) {
 }
 
 function AdminEventsPage({ token, events, refresh }) {
-  const initialForm = { title: "", date: new Date(), time: "20:00", description: "", lineup: "", image_url: "/banner.png", location: "Vaal Vibes", status: "scheduled", cta_label: "RSVP Intent" };
+  const initialForm = { title: "", date: new Date(), time: "20:00", description: "", lineup: "", image_url: "/vibes.jpeg", location: "Vaal Vibes", status: "scheduled", cta_label: "RSVP Intent" };
   const [query, setQuery] = useState("");
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingEvent, setEditingEvent] = useState(null);
@@ -2297,7 +2300,7 @@ function AdminEventsPage({ token, events, refresh }) {
 }
 
 function AdminSpecialsPage({ token, specials, refresh }) {
-  const initialForm = { title: "", description: "", price_label: "", image_url: "/banner.png", date: new Date(), time: "23:59", status: "active", tags: "" };
+  const initialForm = { title: "", description: "", price_label: "", image_url: "/vibes.jpeg", date: new Date(), time: "23:59", status: "active", tags: "" };
   const [view, setView] = useState("grid");
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingSpecial, setEditingSpecial] = useState(null);
@@ -2375,7 +2378,7 @@ function AdminSpecialsPage({ token, specials, refresh }) {
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {(specials || []).map((special) => (
               <Card key={special.id} className="overflow-hidden border-white/10 bg-card" data-testid={`admin-special-card-${special.id}`}>
-                <img src={special.image_url || "/banner.png"} alt={special.title} className="h-48 w-full vv-image-cover" />
+                <img src={special.image_url || "/vibes.jpeg"} alt={special.title} className="h-48 w-full vv-image-cover" />
                 <CardContent className="space-y-4 p-5">
                   <div className="flex items-start justify-between gap-3">
                     <div>

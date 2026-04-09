@@ -32,7 +32,7 @@ PROMO_SECRET = os.environ.get("PROMO_SIGNING_SECRET", "vaal-vibes-promo-secret-2
 pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
 LOGO_URL = "/vv-logo-full.png"
-BANNER_URL = "/banner.png"
+BANNER_URL = "/vibes.jpeg"
 
 # Create the main app without a prefix
 app = FastAPI(title="Vaal Vibes API")
@@ -701,7 +701,7 @@ async def seed_database() -> None:
             date=now + timedelta(days=2),
             description="A premium Friday link-up with deep house selectors, bottle service tables, and late-night braai platters.",
             lineup=["DJ VYBZ", "Lelo House", "Mpho M"],
-            image_url=BANNER_URL,
+            image_url="/LivePerfomance1.jpg",
             status="scheduled",
             cta_label="RSVP Intent",
         ),
@@ -710,7 +710,7 @@ async def seed_database() -> None:
             date=now + timedelta(days=5),
             description="Dress up, book a table, and step into a gold-lit Saturday with headline DJs and curated bottle moments.",
             lineup=["Nox x Lux", "AmaPiano Room", "Guest MC Sedi"],
-            image_url=BANNER_URL,
+            image_url="/partybook.jpg",
             status="scheduled",
             cta_label="Request Booking",
         ),
@@ -719,7 +719,7 @@ async def seed_database() -> None:
             date=now + timedelta(days=8),
             description="Daytime braai platters, cocktails, and relaxed vibes with family-style seating and lighter music energy.",
             lineup=["Resident DJ KJ"],
-            image_url=BANNER_URL,
+            image_url="/LivePerfomance1.jpg",
             status="scheduled",
             cta_label="Reserve Table",
         ),
@@ -730,7 +730,7 @@ async def seed_database() -> None:
             title="Hungry Platter Special",
             description="The signature platter for your crew: chuck, wors, wings, liver, ribs plus pap, chakalaka, and salsa.",
             price_label="R400.00",
-            image_url=BANNER_URL,
+            image_url="/vv-hungry-platter.jpg",
             available_until=now + timedelta(days=7),
             tags=["share", "signature"],
             status="active",
@@ -748,7 +748,7 @@ async def seed_database() -> None:
             title="Bottle & Booth Night",
             description="2 x Jägermeister for R1000. Reserve a booth and choose a premium bottle package for your table.",
             price_label="Special",
-            image_url=BANNER_URL,
+            image_url="/icy.jpg",
             available_until=now + timedelta(days=10),
             tags=["vip", "table-service"],
             status="active",
