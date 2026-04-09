@@ -1320,27 +1320,27 @@ function BirthdayPage() {
         <CardContent>
           <form className="space-y-5" onSubmit={submitBirthdayRequest}>
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Full name" testId="birthday-full-name-input">
-                <Input value={formState.full_name} onChange={(event) => setFormState((current) => ({ ...current, full_name: event.target.value }))} />
+              <Field label="Full name" testId="birthday-full-name-input-field">
+                <Input data-testid="birthday-full-name-input" value={formState.full_name} onChange={(event) => setFormState((current) => ({ ...current, full_name: event.target.value }))} />
               </Field>
-              <Field label="Phone" testId="birthday-phone-input">
-                <Input value={formState.phone} onChange={(event) => setFormState((current) => ({ ...current, phone: event.target.value }))} />
+              <Field label="Phone" testId="birthday-phone-input-field">
+                <Input data-testid="birthday-phone-input" value={formState.phone} onChange={(event) => setFormState((current) => ({ ...current, phone: event.target.value }))} />
               </Field>
-              <Field label="Email" testId="birthday-email-input">
-                <Input value={formState.email} onChange={(event) => setFormState((current) => ({ ...current, email: event.target.value }))} />
+              <Field label="Email" testId="birthday-email-input-field">
+                <Input data-testid="birthday-email-input" value={formState.email} onChange={(event) => setFormState((current) => ({ ...current, email: event.target.value }))} />
               </Field>
-              <Field label="Date of birth" testId="birthday-dob-input">
-                <Input value={formState.date_of_birth} onChange={(event) => setFormState((current) => ({ ...current, date_of_birth: event.target.value }))} placeholder="YYYY-MM-DD" />
+              <Field label="Date of birth" testId="birthday-dob-input-field">
+                <Input data-testid="birthday-dob-input" value={formState.date_of_birth} onChange={(event) => setFormState((current) => ({ ...current, date_of_birth: event.target.value }))} placeholder="YYYY-MM-DD" />
               </Field>
-              <DatePickerField label="Celebration date" value={formState.celebration_date} onChange={(date) => setFormState((current) => ({ ...current, celebration_date: date }))} testId="birthday-celebration-date-picker" />
-              <Field label="Arrival time" testId="birthday-arrival-time-input">
-                <Input value={formState.arrival_time} onChange={(event) => setFormState((current) => ({ ...current, arrival_time: event.target.value }))} placeholder="19:00" />
+              <DatePickerField label="Celebration date" value={formState.celebration_date} onChange={(date) => setFormState((current) => ({ ...current, celebration_date: date }))} testId="birthday-celebration-date-picker" buttonTestId="birthday-celebration-date-button" />
+              <Field label="Arrival time" testId="birthday-arrival-time-input-field">
+                <Input data-testid="birthday-arrival-time-input" value={formState.arrival_time} onChange={(event) => setFormState((current) => ({ ...current, arrival_time: event.target.value }))} placeholder="19:00" />
               </Field>
-              <Field label="Number of guests" testId="birthday-guest-count-input">
-                <Input value={formState.guest_count} onChange={(event) => setFormState((current) => ({ ...current, guest_count: event.target.value }))} />
+              <Field label="Number of guests" testId="birthday-guest-count-input-field">
+                <Input data-testid="birthday-guest-count-input" value={formState.guest_count} onChange={(event) => setFormState((current) => ({ ...current, guest_count: event.target.value }))} />
               </Field>
-              <Field label="Estimated budget (ZAR)" testId="birthday-budget-input">
-                <Input value={formState.estimated_budget} onChange={(event) => setFormState((current) => ({ ...current, estimated_budget: event.target.value }))} />
+              <Field label="Estimated budget (ZAR)" testId="birthday-budget-input-field">
+                <Input data-testid="birthday-budget-input" value={formState.estimated_budget} onChange={(event) => setFormState((current) => ({ ...current, estimated_budget: event.target.value }))} />
               </Field>
               <Field label="Seating preference" testId="birthday-seating-select-field">
                 <Select value={formState.seating_preference} onValueChange={(value) => setFormState((current) => ({ ...current, seating_preference: value }))}>
@@ -1352,16 +1352,16 @@ function BirthdayPage() {
                   </SelectContent>
                 </Select>
               </Field>
-              <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-black/20 px-4 py-3" data-testid="birthday-bottle-service-switch">
+              <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-black/20 px-4 py-3" data-testid="birthday-bottle-service-switch-field">
                 <div>
                   <p className="font-medium text-white">Bottle service interest</p>
                   <p className="text-xs text-muted-foreground">Let the team know if you want a bottle and booth setup.</p>
                 </div>
-                <Switch checked={formState.bottle_service} onCheckedChange={(checked) => setFormState((current) => ({ ...current, bottle_service: Boolean(checked) }))} />
+                <Switch data-testid="birthday-bottle-service-switch" checked={formState.bottle_service} onCheckedChange={(checked) => setFormState((current) => ({ ...current, bottle_service: Boolean(checked) }))} />
               </div>
             </div>
-            <Field label="Special requests" testId="birthday-notes-input">
-              <Textarea rows={5} value={formState.notes} onChange={(event) => setFormState((current) => ({ ...current, notes: event.target.value }))} placeholder="Cake setup, decor colors, DJ shout-out, food platters, booth style, or anything else important." />
+            <Field label="Special requests" testId="birthday-notes-input-field">
+              <Textarea data-testid="birthday-notes-input" rows={5} value={formState.notes} onChange={(event) => setFormState((current) => ({ ...current, notes: event.target.value }))} placeholder="Cake setup, decor colors, DJ shout-out, food platters, booth style, or anything else important." />
             </Field>
             {referenceId ? (
               <Card className="border-primary/20 bg-primary/10">
@@ -2832,13 +2832,13 @@ function Field({ label, children, testId }) {
   );
 }
 
-function DatePickerField({ label, value, onChange, testId }) {
+function DatePickerField({ label, value, onChange, testId, buttonTestId }) {
   return (
     <div className="space-y-2" data-testid={testId}>
       <Label className="text-sm text-white">{label}</Label>
       <Popover>
         <PopoverTrigger asChild>
-          <Button variant="outline" className="w-full justify-between border-white/10 bg-transparent text-left font-normal text-white hover:bg-white/5">
+          <Button data-testid={buttonTestId || testId} variant="outline" className="w-full justify-between border-white/10 bg-transparent text-left font-normal text-white hover:bg-white/5">
             <span>{value ? formatDate(value) : "Pick a date"}</span>
             <CalendarDays className="h-4 w-4 text-primary" />
           </Button>
