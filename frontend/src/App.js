@@ -1,4 +1,4 @@
-import { cloneElement, isValidElement, useEffect, useMemo, useState } from "react";
+import { cloneElement, isValidElement, useCallback, useEffect, useMemo, useState } from "react";
 import "@/App.css";
 import { BrowserRouter, Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import axios from "axios";
@@ -290,7 +290,49 @@ function AppShell() {
     }
   };
 
-  const loadCustomerData = async (token = customerToken) => {
+  const logoutCustomer = useCallback((silent = false) => {
+    setCustomerToken("");
+    setCustomerUser(null);
+    removeStorage(CUSTOMER_USER_KEY);
+    localStorage.removeItem(CUSTOMER_TOKEN_KEY);
+    if (!silent) {
+      toast.success("Customer session closed.");
+      navigate("/");
+    }
+  }, [navigate]);
+
+  const logoutAdmin = useCallback((silent = false) => {
+    setAdminToken("");
+    setAdminUser(null);
+    removeStorage(ADMIN_USER_KEY);
+    localStorage.removeItem(ADMIN_TOKEN_KEY);
+    if (!silent) {
+      toast.success("Admin session closed.");
+      navigate("/admin/login");
+    }
+  }, [navigate]);
+
+  const loadBootstrap = async () => {
+    setBootstrapLoading(true);
+    try {
+      const response = await api.get("/public/bootstrap");
+      setBootstrap(response.data);
+      writeStorage(BOOTSTRAP_CACHE_KEY, response.data);
+      setBootstrapError("");
+    } catch (error) {
+      const cached = readStorage(BOOTSTRAP_CACHE_KEY, defaultBootstrap);
+      setBootstrap(cached);
+      setBootstrapError(
+        cached?.menu?.length
+          ? "Offline mode: showing last synced content."
+          : "Unable to load Vaal Vibes content right now.",
+      );
+    } finally {
+      setBootstrapLoading(false);
+    }
+  };
+
+  const loadCustomerData = useCallback(async (token = customerToken) => {
     if (!token) {
       setCustomerProfile(null);
       setWallet([]);
@@ -314,9 +356,9 @@ function AppShell() {
     } finally {
       setCustomerLoading(false);
     }
-  };
+  }, [customerToken, logoutCustomer]);
 
-  const loadAdminData = async (token = adminToken) => {
+  const loadAdminData = useCallback(async (token = adminToken) => {
     if (!token) {
       setAdminDashboard(null);
       setAdminEvents([]);
@@ -331,7 +373,16 @@ function AppShell() {
 
     setAdminLoading(true);
     try {
-      const [dashboardResponse, eventsResponse, specialsResponse, poolsResponse, campaignsResponse, usersResponse, auditResponse, requestsResponse] = await Promise.all([
+      const [
+        dashboardResponse,
+        eventsResponse,
+        specialsResponse,
+        poolsResponse,
+        campaignsResponse,
+        usersResponse,
+        auditResponse,
+        requestsResponse,
+      ] = await Promise.all([
         api.get("/admin/dashboard", authConfig(token)),
         api.get("/admin/events", authConfig(token)),
         api.get("/admin/specials", authConfig(token)),
@@ -355,61 +406,19 @@ function AppShell() {
     } finally {
       setAdminLoading(false);
     }
-  };
+  }, [adminToken, logoutAdmin]);
 
   useEffect(() => {
     loadBootstrap();
   }, []);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
-    loadCustomerData(customerToken);
-  }, [customerToken]);
-
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    loadAdminData(adminToken);
-  }, [adminToken]);
+    loadCustomerData();
+  }, [loadCustomerData]);
 
   useEffect(() => {
-    const handleOnline = () => setIsOffline(false);
-    const handleOffline = () => setIsOffline(true);
-    window.addEventListener("online", handleOnline);
-    window.addEventListener("offline", handleOffline);
-    return () => {
-      window.removeEventListener("online", handleOnline);
-      window.removeEventListener("offline", handleOffline);
-    };
-  }, []);
-
-  const logoutCustomer = (silent = false) => {
-    setCustomerToken("");
-    setCustomerUser(null);
-    removeStorage(CUSTOMER_USER_KEY);
-    localStorage.removeItem(CUSTOMER_TOKEN_KEY);
-    if (!silent) {
-      toast.success("Customer session closed.");
-      navigate("/");
-    }
-  };
-
-  const logoutAdmin = (silent = false) => {
-    setAdminToken("");
-    setAdminUser(null);
-    removeStorage(ADMIN_USER_KEY);
-    localStorage.removeItem(ADMIN_TOKEN_KEY);
-    if (!silent) {
-      toast.success("Admin session closed.");
-      navigate("/admin/login");
-    }
-  };
-
-  const saveCustomerSession = (payload) => {
-    localStorage.setItem(CUSTOMER_TOKEN_KEY, payload.access_token);
-    writeStorage(CUSTOMER_USER_KEY, payload);
-    setCustomerToken(payload.access_token);
-    setCustomerUser(payload);
-  };
+    loadAdminData();
+  }, [loadAdminData]);
 
   const saveAdminSession = (payload) => {
     localStorage.setItem(ADMIN_TOKEN_KEY, payload.access_token);
