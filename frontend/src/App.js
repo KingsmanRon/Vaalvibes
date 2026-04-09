@@ -74,6 +74,7 @@ import { LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip as ChartTooltip, 
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
+const FORMSPREE_ENDPOINT = process.env.REACT_APP_FORMSPREE_ENDPOINT;
 
 const api = axios.create({
   baseURL: API,
@@ -728,7 +729,7 @@ function CustomerFrame({ children, customerUser, theme, setTheme, logoutCustomer
 
 function CustomerBottomNav() {
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-[140] border-t border-white/10 bg-[#111111]/92 backdrop-blur-xl" data-testid="customer-bottom-nav">
+    <nav className="fixed inset-x-0 bottom-0 z-[140] border-t border-white/10 bg-[#111111]/92 backdrop-blur-xl pb-[env(safe-area-inset-bottom)]" data-testid="customer-bottom-nav">
       <div className="mx-auto grid max-w-[560px] grid-cols-5 gap-1 px-2 py-2">
         {customerLinks.map((item) => {
           const Icon = item.icon;
@@ -914,7 +915,7 @@ function HomePage({ bootstrap, loading, error, onOpenRequest, onOpenSpecial }) {
         <SectionHeading
           eyebrow="Tonight"
           title="Specials that set the tone"
-          description="Per design guidelines, using #F5C518 as the accent for badges, CTA buttons, dividers, and key pricing moments while keeping matte-black surfaces dominant."
+          description="Signature specials, VIP packages, and limited-run deals — all available for request at the venue."
           action={
             <Button asChild variant="ghost" className="text-primary hover:bg-primary/10" data-testid="home-menu-link-button">
               <Link to="/menu">Open menu <ChevronRight className="h-4 w-4" /></Link>
@@ -1248,7 +1249,7 @@ function BirthdayPage() {
     event.preventDefault();
     setSubmitting(true);
     try {
-      const response = await api.post("/public/birthday-requests", {
+      const birthdayPayload = {
         full_name: formState.full_name,
         email: formState.email,
         phone: formState.phone,
@@ -1260,7 +1261,24 @@ function BirthdayPage() {
         seating_preference: formState.seating_preference,
         bottle_service: formState.bottle_service,
         notes: formState.notes,
-      });
+      };
+      const response = await api.post("/public/birthday-requests", birthdayPayload);
+
+      if (FORMSPREE_ENDPOINT) {
+        axios.post(FORMSPREE_ENDPOINT, {
+          _subject: `Birthday Booking — ${formState.full_name}`,
+          name: formState.full_name,
+          email: formState.email,
+          phone: formState.phone,
+          celebration_date: formState.celebration_date,
+          guest_count: formState.guest_count,
+          budget: `R${formState.estimated_budget}`,
+          seating: formState.seating_preference,
+          bottle_service: formState.bottle_service ? "Yes" : "No",
+          notes: formState.notes || "None",
+        }).catch(() => {});
+      }
+
       setReferenceId(response.data.reference_id);
       toast.success("Birthday booking request sent.");
       setFormState({
@@ -2346,7 +2364,7 @@ function AdminSpecialsPage({ token, specials, refresh }) {
   return (
     <div className="space-y-6" data-testid="admin-specials-page">
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <SectionHeading eyebrow="Menu moments" title="Specials management" description="Control signature menu offers and VIP package entries across the customer PWA." />
+        <SectionHeading eyebrow="Menu moments" title="Specials management" description="Control signature menu offers and VIP package entries across the customer web app." />
         <Button onClick={openCreate} data-testid="create-special-button"><Plus className="mr-2 h-4 w-4" />Create special</Button>
       </div>
       <Tabs value={view} onValueChange={setView}>
@@ -2722,7 +2740,7 @@ function AdminUsersPage({ users, loading }) {
 
   return (
     <div className="space-y-6" data-testid="admin-users-page">
-      <SectionHeading eyebrow="Customers" title="Registered users" description="Quick-read list of venue customers captured through the Vaal Vibes PWA." />
+      <SectionHeading eyebrow="Customers" title="Registered users" description="Quick-read list of venue customers captured through the Vaal Vibes web app." />
       <Card className="border-white/10 bg-card">
         <CardContent className="p-0">
           <ScrollArea className="w-full">

@@ -1,7 +1,7 @@
 {
   "short_name": "Vaal Vibes",
-  "name": "Vaal Vibes PWA",
-  "description": "Nightlife, menu, promo wallet, and admin operations in one installable Vaal Vibes experience.",
+  "name": "Vaal Vibes",
+  "description": "Nightlife, menu, promo wallet, and admin operations — a premium Vaal Vibes browser experience.",
   "icons": [
     {
       "src": "/icon-192.png",
@@ -17,7 +17,7 @@
     }
   ],
   "start_url": "/",
-  "display": "standalone",
+  "display": "browser",
   "theme_color": "#111111",
   "background_color": "#111111"
 }

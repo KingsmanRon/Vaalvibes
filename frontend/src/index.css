@@ -70,13 +70,18 @@
 
   html {
     scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
   }
 
   body {
     @apply bg-background text-foreground antialiased;
     font-family: "Space Grotesk", sans-serif;
     min-height: 100vh;
+    min-height: 100dvh;
     background-image: radial-gradient(circle at top, rgba(245, 197, 24, 0.08), transparent 30%);
+    -webkit-tap-highlight-color: transparent;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    overscroll-behavior-y: none;
   }
 
   h1,
@@ -96,41 +101,5 @@
   a,
   [role="button"] {
     cursor: pointer;
-  }
-
-  #emergent-badge {
-    display: none !important;
-  }
-}
-
-@layer base {
-  [data-debug-wrapper="true"] {
-    display: contents !important;
-  }
-
-  [data-debug-wrapper="true"] > * {
-    margin-left: inherit;
-    margin-right: inherit;
-    margin-top: inherit;
-    margin-bottom: inherit;
-    padding-left: inherit;
-    padding-right: inherit;
-    padding-top: inherit;
-    padding-bottom: inherit;
-    column-gap: inherit;
-    row-gap: inherit;
-    gap: inherit;
-    border-left-width: inherit;
-    border-right-width: inherit;
-    border-top-width: inherit;
-    border-bottom-width: inherit;
-    border-left-style: inherit;
-    border-right-style: inherit;
-    border-top-style: inherit;
-    border-bottom-style: inherit;
-    border-left-color: inherit;
-    border-right-color: inherit;
-    border-top-color: inherit;
-    border-bottom-color: inherit;
   }
 }

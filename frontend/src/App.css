@@ -1,5 +1,13 @@
 .vv-app {
   min-height: 100vh;
+  min-height: 100dvh;
+  touch-action: manipulation;
+}
+
+@media (hover: none) and (pointer: coarse) {
+  input, select, textarea {
+    font-size: 16px !important;
+  }
 }
 
 .vv-noise {

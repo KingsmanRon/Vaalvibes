@@ -31,8 +31,8 @@ PROMO_SECRET = os.environ.get("PROMO_SIGNING_SECRET", "vaal-vibes-promo-secret-2
 
 pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
-LOGO_URL = "https://customer-assets.emergentagent.com/job_0787610c-0401-43b9-840c-45ba3bc63b88/artifacts/rkt9z1ui_Logo.png"
-BANNER_URL = "https://customer-assets.emergentagent.com/job_0787610c-0401-43b9-840c-45ba3bc63b88/artifacts/v91ro2ph_temp%20banner.png"
+LOGO_URL = "/vv-logo-full.png"
+BANNER_URL = "/banner.png"
 
 # Create the main app without a prefix
 app = FastAPI(title="Vaal Vibes API")
