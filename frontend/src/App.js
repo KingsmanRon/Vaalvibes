@@ -211,6 +211,9 @@ const getSpecialFeatureImage = (special) => {
   if (special?.title === "Bottle & Booth Night") {
     return BOTTLE_BOOTH_IMAGE;
   }
+  if (special?.title === "Sunset Special") {
+    return "/corona1.jpg";
+  }
   return special?.image_url || SPECIAL_FEATURE_IMAGE;
 };
 
@@ -881,7 +884,7 @@ function HomePage({ bootstrap, loading, error, onOpenRequest, onOpenSpecial }) {
           </div>
           <div className="rounded-[26px] border border-primary/15 bg-[#050505] p-3">
             <div className="overflow-hidden rounded-[22px] bg-black">
-              <img src={HERO_IMAGE} alt="Vaal Vibes welcome shots" className="h-[320px] w-full vv-image-cover sm:h-[360px]" data-testid="hero-feature-image" />
+              <img src={HERO_IMAGE} alt="Vaal Vibes welcome shots" className="h-[320px] w-full vv-image-cover scale-[1.15] sm:h-[360px]" data-testid="hero-feature-image" />
             </div>
           </div>
         </div>
