@@ -221,11 +221,25 @@ class CustomerRequestCreate(BaseModel):
     contact_phone: str
 
 
+class BirthdayBookingCreate(BaseModel):
+    full_name: str
+    email: str
+    phone: str
+    date_of_birth: str
+    celebration_date: datetime
+    arrival_time: str
+    guest_count: int
+    estimated_budget: float
+    seating_preference: Literal["indoor", "patio", "vip"] = "vip"
+    bottle_service: bool = False
+    notes: str = ""
+
+
 class CustomerRequest(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     reference_id: str
     user_id: str
-    request_type: Literal["reservation", "order-intent"]
+    request_type: Literal["reservation", "order-intent", "birthday-booking"]
     date: datetime
     guest_count: int
     notes: str = ""
@@ -233,6 +247,14 @@ class CustomerRequest(BaseModel):
     contact_phone: str
     status: Literal["pending", "confirmed", "completed", "cancelled"] = "pending"
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    customer_name: Optional[str] = None
+    customer_email: Optional[str] = None
+    estimated_budget: Optional[float] = None
+    arrival_time: Optional[str] = None
+    occasion: Optional[str] = None
+    seating_preference: Optional[str] = None
+    date_of_birth: Optional[str] = None
+    bottle_service: Optional[bool] = None
 
 
 class Campaign(BaseModel):
@@ -402,6 +424,20 @@ def promo_signature(code: str, user_id: str, pool_id: str) -> str:
     return digest[:16].upper()
 
 
+def build_birthday_notes(payload: BirthdayBookingCreate) -> str:
+    extras = [
+        f"Birthday booking for {payload.full_name}",
+        f"DOB: {payload.date_of_birth}",
+        f"Arrival time: {payload.arrival_time}",
+        f"Estimated budget: R{payload.estimated_budget:.2f}",
+        f"Seating: {payload.seating_preference}",
+        f"Bottle service: {'yes' if payload.bottle_service else 'no'}",
+    ]
+    if payload.notes:
+        extras.append(f"Notes: {payload.notes}")
+    return " | ".join(extras)
+
+
 async def append_audit_log(actor: dict, action: str, entity_type: str, entity_id: str, summary: str) -> None:
     entry = AuditLogEntry(
         actor_id=actor["id"],
@@ -441,6 +477,7 @@ async def issue_welcome_promo(user_id: str) -> PromoCode:
     await db.promo_codes.insert_one(promo.model_dump())
     return promo
 
+
 async def repair_promo_signatures() -> None:
     promos = await db.promo_codes.find({}, {"_id": 0}).to_list(length=1000)
     for promo in promos:
@@ -450,7 +487,6 @@ async def repair_promo_signatures() -> None:
                 {"id": promo["id"]},
                 {"$set": {"signature": expected_signature}},
             )
-
 
 
 async def validate_promo_logic(code: str, bill_amount: float) -> PromoValidationResponse:
@@ -829,6 +865,30 @@ async def get_specials() -> List[SpecialItem]:
     return serialize_many(await db.specials.find({}, {"_id": 0}).sort("available_until", 1).to_list(length=100))
 
 
+@api_router.post("/public/birthday-requests", response_model=CustomerRequest)
+async def create_birthday_request(payload: BirthdayBookingCreate) -> CustomerRequest:
+    request_doc = CustomerRequest(
+        reference_id=uuid.uuid4().hex[:8].upper(),
+        user_id="guest-birthday",
+        request_type="birthday-booking",
+        date=payload.celebration_date,
+        guest_count=payload.guest_count,
+        notes=build_birthday_notes(payload),
+        items=[],
+        contact_phone=payload.phone,
+        customer_name=payload.full_name,
+        customer_email=payload.email,
+        estimated_budget=payload.estimated_budget,
+        arrival_time=payload.arrival_time,
+        occasion="birthday",
+        seating_preference=payload.seating_preference,
+        date_of_birth=payload.date_of_birth,
+        bottle_service=payload.bottle_service,
+    )
+    await db.requests.insert_one(request_doc.model_dump())
+    return request_doc
+
+
 # Customer auth and profile
 @api_router.post("/auth/register", response_model=AuthResponse)
 async def register_customer(payload: CustomerRegisterRequest) -> AuthResponse:
@@ -951,6 +1011,8 @@ async def create_customer_request(payload: CustomerRequestCreate, current_user: 
         notes=payload.notes,
         items=payload.items,
         contact_phone=payload.contact_phone,
+        customer_name=current_user.get("name"),
+        customer_email=current_user.get("email"),
     )
     await db.requests.insert_one(request_doc.model_dump())
     return request_doc
@@ -1005,7 +1067,7 @@ async def get_admin_dashboard(current_admin: dict = Depends(get_current_admin)) 
         label = entry["created_at"].strftime("%d %b")
         redemption_series[label] = redemption_series.get(label, 0) + 1
 
-    request_counts = {"reservation": 0, "order-intent": 0}
+    request_counts = {"reservation": 0, "order-intent": 0, "birthday-booking": 0}
     for item in recent_requests:
         request_counts[item["request_type"]] = request_counts.get(item["request_type"], 0) + 1
 

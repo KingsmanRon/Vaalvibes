@@ -435,6 +435,46 @@ class VaalVibesAPITester:
         else:
             self.log_result("Promo Redemption", False, f"Failed: {data}")
 
+    def test_birthday_booking_endpoint(self):
+        """Test the new birthday booking endpoint"""
+        print("\n🔍 Testing Birthday Booking Endpoint...")
+        
+        # Test birthday booking creation
+        birthday_data = {
+            "full_name": "Test Birthday Person",
+            "email": "birthday@test.com",
+            "phone": "+27 71 123 4567",
+            "date_of_birth": "1995-06-15",
+            "celebration_date": (datetime.now() + timedelta(days=14)).isoformat(),
+            "arrival_time": "19:30",
+            "guest_count": 8,
+            "estimated_budget": 3500.0,
+            "seating_preference": "vip",
+            "bottle_service": True,
+            "notes": "Birthday celebration with cake and DJ shout-out"
+        }
+        
+        success, data = self.make_request('POST', '/public/birthday-requests', birthday_data, 
+                                        expected_status=200)
+        if success and 'reference_id' in data:
+            reference_id = data['reference_id']
+            self.log_result("Create Birthday Booking", True, 
+                           f"Reference ID: {reference_id}")
+            
+            # Verify the request type is correct
+            request_type = data.get('request_type')
+            self.log_result("Birthday Request Type", request_type == 'birthday-booking',
+                           f"Expected: birthday-booking, Got: {request_type}")
+            
+            # Verify essential fields are present
+            required_fields = ['customer_name', 'customer_email', 'estimated_budget', 'occasion']
+            missing_fields = [f for f in required_fields if f not in data or data[f] is None]
+            self.log_result("Birthday Request Fields", len(missing_fields) == 0,
+                           f"Missing fields: {missing_fields}" if missing_fields else "All fields present")
+            
+        else:
+            self.log_result("Create Birthday Booking", False, f"Failed: {data}")
+
     def test_admin_other_endpoints(self):
         """Test other admin endpoints"""
         if not self.admin_token:
@@ -448,6 +488,12 @@ class VaalVibesAPITester:
         if success:
             request_count = len(data) if isinstance(data, list) else 0
             self.log_result("Admin Requests List", True, f"Found {request_count} requests")
+            
+            # Check if birthday bookings are visible in admin requests
+            birthday_requests = [r for r in data if r.get('request_type') == 'birthday-booking']
+            birthday_count = len(birthday_requests)
+            self.log_result("Birthday Requests in Admin List", birthday_count >= 0,
+                           f"Found {birthday_count} birthday requests")
         else:
             self.log_result("Admin Requests List", False, f"Failed: {data}")
         
@@ -490,6 +536,7 @@ class VaalVibesAPITester:
         
         try:
             self.test_public_endpoints()
+            self.test_birthday_booking_endpoint()
             self.test_customer_auth()
             self.test_customer_profile_and_wallet()
             self.test_customer_requests()

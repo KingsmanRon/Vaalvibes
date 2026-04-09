@@ -85,6 +85,9 @@ const ADMIN_TOKEN_KEY = "vv-admin-token";
 const ADMIN_USER_KEY = "vv-admin-user";
 const BOOTSTRAP_CACHE_KEY = "vv-bootstrap-cache";
 const HERO_IMAGE = "/vv-hero-shot.jpg";
+const HUNGRY_PLATTER_IMAGE = "/vv-hungry-platter.jpg";
+const BOTTLE_BOOTH_IMAGE = "/vv-bottle-booth.jpg";
+const FRIDAY_AFTER_DARK_IMAGE = "/vv-friday-after-dark.jpg";
 const SPECIAL_FEATURE_IMAGE = "/vv-bottle-shot.jpg";
 const VENUE_FEATURE_IMAGE = "/vv-bar-shot.jpg";
 const FULL_LOGO_IMAGE = "/vv-logo-full.png";
@@ -198,6 +201,23 @@ const getEventFilter = (events, filter) => {
   const monthLimit = new Date();
   monthLimit.setMonth(now.getMonth() + 1);
   return events.filter((event) => new Date(event.date) <= monthLimit);
+};
+
+const getSpecialFeatureImage = (special) => {
+  if (special?.title === "Hungry Platter Special") {
+    return HUNGRY_PLATTER_IMAGE;
+  }
+  if (special?.title === "Bottle & Booth Night") {
+    return BOTTLE_BOOTH_IMAGE;
+  }
+  return special?.image_url || SPECIAL_FEATURE_IMAGE;
+};
+
+const getEventFeatureImage = (event) => {
+  if (event?.title === "Friday After Dark") {
+    return FRIDAY_AFTER_DARK_IMAGE;
+  }
+  return event?.image_url || HERO_IMAGE;
 };
 
 function App() {
@@ -583,6 +603,7 @@ function AppShell() {
               />
             }
           />
+          <Route path="/birthdays" element={<BirthdayPage />} />
           <Route
             path="/wallet"
             element={
@@ -901,8 +922,8 @@ function HomePage({ bootstrap, loading, error, onOpenRequest, onOpenSpecial }) {
           }
         />
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {bootstrap.specials.map((special, index) => {
-            const specialImage = index === 0 ? SPECIAL_FEATURE_IMAGE : special.image_url || "/banner.png";
+          {bootstrap.specials.map((special) => {
+            const specialImage = getSpecialFeatureImage(special);
             return (
             <Card key={special.id} className="group overflow-hidden border-white/10 bg-card transition-colors hover:border-primary/40" data-testid="special-card">
               <div className="relative h-44 overflow-hidden">
@@ -937,8 +958,8 @@ function HomePage({ bootstrap, loading, error, onOpenRequest, onOpenSpecial }) {
         <div className="space-y-4">
           {bootstrap.events.map((event) => (
             <Card key={event.id} className="overflow-hidden border-white/10 bg-card transition-colors hover:border-primary/35" data-testid="event-card">
-              <div className="grid gap-4 md:grid-cols-[160px_1fr]">
-                <img src={event.image_url || "/banner.png"} alt={event.title} className="h-full min-h-[180px] w-full vv-image-cover" />
+              <div className="grid gap-4 md:grid-cols-[200px_1fr]">
+                <img src={getEventFeatureImage(event)} alt={event.title} className="h-full min-h-[220px] w-full vv-image-cover" />
                 <CardContent className="flex flex-col gap-4 p-5">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
@@ -969,6 +990,38 @@ function HomePage({ bootstrap, loading, error, onOpenRequest, onOpenSpecial }) {
               </div>
             </Card>
           ))}
+        </div>
+      </section>
+
+      <section className="rounded-[28px] border border-white/10 bg-card p-6 sm:p-8">
+        <div className="grid gap-6 lg:grid-cols-[1fr_0.9fr] lg:items-center">
+          <div>
+            <SectionHeading
+              eyebrow="Celebrate"
+              title="Birthday bookings at Vaal Vibes"
+              description="Planning a birthday turn-up? Send your date, guest count, budget, and arrival time so the team can shape a booth, bottle, and food setup around your vibe."
+              action={
+                <Button asChild className="h-11" data-testid="birthday-section-cta-button">
+                  <Link to="/birthdays">Plan your birthday</Link>
+                </Button>
+              }
+            />
+            <div className="grid gap-3 sm:grid-cols-2">
+              {[
+                "VIP booths and bottle service options",
+                "Budget-aware planning for groups",
+                "Arrival-time coordination with the venue team",
+                "Space for decor, cake, and shout-out notes",
+              ].map((item) => (
+                <div key={item} className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white/80">
+                  {item}
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="overflow-hidden rounded-[24px] border border-primary/15 bg-black">
+            <img src={BOTTLE_BOOTH_IMAGE} alt="Birthday bottle booth setup" className="h-[320px] w-full vv-image-cover" data-testid="birthday-section-image" />
+          </div>
         </div>
       </section>
 
@@ -1141,30 +1194,189 @@ function EventsPage({ events, loading, onOpenRequest }) {
       </Tabs>
       <div className="space-y-4">
         {filtered.map((event) => (
-          <Card key={event.id} className="border-white/10 bg-card" data-testid={`events-list-card-${event.id}`}>
-            <CardContent className="grid gap-4 p-5 md:grid-cols-[120px_1fr_auto] md:items-center">
-              <div className="rounded-2xl border border-primary/20 bg-primary/10 p-4 text-center">
-                <p className="text-xs uppercase tracking-[0.28em] text-primary">Date</p>
-                <p className="mt-3 font-display text-4xl text-white">{new Date(event.date).getDate()}</p>
-                <p className="text-xs text-muted-foreground">{new Date(event.date).toLocaleString("en-ZA", { month: "short" })}</p>
-              </div>
-              <div>
-                <h3 className="font-display text-3xl text-white">{event.title}</h3>
-                <p className="mt-2 text-sm text-muted-foreground">{event.description}</p>
+          <Card key={event.id} className="overflow-hidden border-white/10 bg-card" data-testid={`events-list-card-${event.id}`}>
+            <div className="grid gap-4 md:grid-cols-[220px_120px_1fr_auto]">
+              <img src={getEventFeatureImage(event)} alt={event.title} className="h-full min-h-[220px] w-full vv-image-cover" />
+              <CardContent className="flex items-center justify-center p-5 md:p-4">
+                <div className="w-full rounded-2xl border border-primary/20 bg-primary/10 p-4 text-center">
+                  <p className="text-xs uppercase tracking-[0.28em] text-primary">Date</p>
+                  <p className="mt-3 font-display text-4xl text-white">{new Date(event.date).getDate()}</p>
+                  <p className="text-xs text-muted-foreground">{new Date(event.date).toLocaleString("en-ZA", { month: "short" })}</p>
+                </div>
+              </CardContent>
+              <CardContent className="flex flex-col justify-center gap-4 p-5">
+                <div>
+                  <h3 className="font-display text-3xl text-white">{event.title}</h3>
+                  <p className="mt-2 text-sm text-muted-foreground">{event.description}</p>
+                </div>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {(event.lineup || []).map((artist) => (
                     <Badge key={artist} variant="outline" className="border-white/10 bg-white/5 text-white">{artist}</Badge>
                   ))}
                 </div>
-              </div>
-              <div className="flex flex-col gap-2 md:items-end">
+              </CardContent>
+              <CardContent className="flex flex-col justify-center gap-2 p-5 md:items-end">
                 <Badge className="border-primary/20 bg-primary/10 text-primary">{formatDateTime(event.date)}</Badge>
                 <Button onClick={() => onOpenRequest(event.title)} data-testid={`events-request-button-${event.id}`}>Request booking</Button>
-              </div>
-            </CardContent>
+              </CardContent>
+            </div>
           </Card>
         ))}
       </div>
+    </div>
+  );
+}
+
+function BirthdayPage() {
+  const [submitting, setSubmitting] = useState(false);
+  const [referenceId, setReferenceId] = useState("");
+  const [formState, setFormState] = useState({
+    full_name: "",
+    email: "",
+    phone: "",
+    date_of_birth: "",
+    celebration_date: new Date(),
+    arrival_time: "19:00",
+    guest_count: 10,
+    estimated_budget: 2500,
+    seating_preference: "vip",
+    bottle_service: true,
+    notes: "",
+  });
+
+  const submitBirthdayRequest = async (event) => {
+    event.preventDefault();
+    setSubmitting(true);
+    try {
+      const response = await api.post("/public/birthday-requests", {
+        full_name: formState.full_name,
+        email: formState.email,
+        phone: formState.phone,
+        date_of_birth: formState.date_of_birth,
+        celebration_date: buildIsoDateTime(formState.celebration_date, formState.arrival_time),
+        arrival_time: formState.arrival_time,
+        guest_count: Number(formState.guest_count),
+        estimated_budget: Number(formState.estimated_budget),
+        seating_preference: formState.seating_preference,
+        bottle_service: formState.bottle_service,
+        notes: formState.notes,
+      });
+      setReferenceId(response.data.reference_id);
+      toast.success("Birthday booking request sent.");
+      setFormState({
+        full_name: "",
+        email: "",
+        phone: "",
+        date_of_birth: "",
+        celebration_date: new Date(),
+        arrival_time: "19:00",
+        guest_count: 10,
+        estimated_budget: 2500,
+        seating_preference: "vip",
+        bottle_service: true,
+        notes: "",
+      });
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Could not send the birthday request.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6" data-testid="birthday-page">
+      <section className="overflow-hidden rounded-[28px] border border-white/10 bg-card">
+        <div className="grid gap-6 p-6 sm:p-8 lg:grid-cols-[0.95fr_1.05fr] lg:items-center">
+          <div className="space-y-4">
+            <Badge className="w-fit border-primary/25 bg-primary/15 px-3 py-1 text-primary">Birthday bookings</Badge>
+            <h1 className="font-display text-5xl leading-[0.92] text-white">Plan your birthday with the Vaal Vibes team</h1>
+            <p className="text-sm text-white/75">
+              Share your date of birth, celebration night, guest count, budget, and booth preferences. We will use it to plan a smooth birthday setup at the venue.
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {[
+                "VIP seating or standard indoor placement",
+                "Bottle service preference",
+                "Budget-friendly group planning",
+                "Notes for cake, shout-outs, and decor",
+              ].map((item) => (
+                <div key={item} className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white/80">
+                  {item}
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="overflow-hidden rounded-[24px] border border-primary/15 bg-black">
+            <img src={FRIDAY_AFTER_DARK_IMAGE} alt="Birthday crowd at Vaal Vibes" className="h-[360px] w-full vv-image-cover" data-testid="birthday-page-image" />
+          </div>
+        </div>
+      </section>
+
+      <Card className="border-white/10 bg-card">
+        <CardHeader>
+          <CardTitle className="font-display text-4xl text-white">Birthday request form</CardTitle>
+          <CardDescription>Fill in the details below and the venue team can plan your birthday booking around your budget and guest count.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form className="space-y-5" onSubmit={submitBirthdayRequest}>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Full name" testId="birthday-full-name-input">
+                <Input value={formState.full_name} onChange={(event) => setFormState((current) => ({ ...current, full_name: event.target.value }))} />
+              </Field>
+              <Field label="Phone" testId="birthday-phone-input">
+                <Input value={formState.phone} onChange={(event) => setFormState((current) => ({ ...current, phone: event.target.value }))} />
+              </Field>
+              <Field label="Email" testId="birthday-email-input">
+                <Input value={formState.email} onChange={(event) => setFormState((current) => ({ ...current, email: event.target.value }))} />
+              </Field>
+              <Field label="Date of birth" testId="birthday-dob-input">
+                <Input value={formState.date_of_birth} onChange={(event) => setFormState((current) => ({ ...current, date_of_birth: event.target.value }))} placeholder="YYYY-MM-DD" />
+              </Field>
+              <DatePickerField label="Celebration date" value={formState.celebration_date} onChange={(date) => setFormState((current) => ({ ...current, celebration_date: date }))} testId="birthday-celebration-date-picker" />
+              <Field label="Arrival time" testId="birthday-arrival-time-input">
+                <Input value={formState.arrival_time} onChange={(event) => setFormState((current) => ({ ...current, arrival_time: event.target.value }))} placeholder="19:00" />
+              </Field>
+              <Field label="Number of guests" testId="birthday-guest-count-input">
+                <Input value={formState.guest_count} onChange={(event) => setFormState((current) => ({ ...current, guest_count: event.target.value }))} />
+              </Field>
+              <Field label="Estimated budget (ZAR)" testId="birthday-budget-input">
+                <Input value={formState.estimated_budget} onChange={(event) => setFormState((current) => ({ ...current, estimated_budget: event.target.value }))} />
+              </Field>
+              <Field label="Seating preference" testId="birthday-seating-select">
+                <Select value={formState.seating_preference} onValueChange={(value) => setFormState((current) => ({ ...current, seating_preference: value }))}>
+                  <SelectTrigger><SelectValue placeholder="Choose seating" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="indoor">Indoor</SelectItem>
+                    <SelectItem value="patio">Patio</SelectItem>
+                    <SelectItem value="vip">VIP booth</SelectItem>
+                  </SelectContent>
+                </Select>
+              </Field>
+              <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-black/20 px-4 py-3" data-testid="birthday-bottle-service-switch">
+                <div>
+                  <p className="font-medium text-white">Bottle service interest</p>
+                  <p className="text-xs text-muted-foreground">Let the team know if you want a bottle and booth setup.</p>
+                </div>
+                <Switch checked={formState.bottle_service} onCheckedChange={(checked) => setFormState((current) => ({ ...current, bottle_service: Boolean(checked) }))} />
+              </div>
+            </div>
+            <Field label="Special requests" testId="birthday-notes-input">
+              <Textarea rows={5} value={formState.notes} onChange={(event) => setFormState((current) => ({ ...current, notes: event.target.value }))} placeholder="Cake setup, decor colors, DJ shout-out, food platters, booth style, or anything else important." />
+            </Field>
+            {referenceId ? (
+              <Card className="border-primary/20 bg-primary/10">
+                <CardContent className="p-4">
+                  <p className="text-xs uppercase tracking-[0.22em] text-primary">Birthday reference</p>
+                  <p className="mt-2 text-3xl font-semibold text-white" data-testid="birthday-reference-id">{referenceId}</p>
+                </CardContent>
+              </Card>
+            ) : null}
+            <Button type="submit" className="h-12 w-full" disabled={submitting} data-testid="birthday-submit-button">
+              {submitting ? "Sending request..." : "Send birthday request"}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
     </div>
   );
 }
@@ -1173,7 +1385,6 @@ function WalletPage({ wallet, requests, loading }) {
   if (loading) {
     return <SkeletonPanel />;
   }
-
   return (
     <div className="space-y-6" data-testid="wallet-page">
       <SectionHeading eyebrow="Your rewards" title="Promo wallet" description="Show your approved promo to staff for validation. Redemption happens on the admin side at the venue." />

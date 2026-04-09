@@ -1,6 +1,18 @@
 [
   {
-    "content": "Re-test updated UI flows and verify visual changes",
+    "content": "Map the new uploaded images to Hungry Platter, Bottle & Booth Night, and Friday After Dark",
     "status": "completed"
+  },
+  {
+    "content": "Add home birthday bookings section and dedicated birthday page",
+    "status": "completed"
+  },
+  {
+    "content": "Wire birthday form submission into request flow and admin visibility",
+    "status": "completed"
+  },
+  {
+    "content": "Re-test birthday booking and imagery updates",
+    "status": "in_progress"
   }
 ]

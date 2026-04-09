@@ -17,14 +17,18 @@
     - Forgot password
 - Browser-first UX requirement (delivered):
   - Keep technical PWA support (manifest + service worker) for offline shell/caching.
-  - Remove **all** installation prompting behavior/UI (no install CTA, no beforeinstallprompt handling).
-- Current status update:
-  - **Phase 1 (Backend) — COMPLETED and smoke-tested**.
-  - **Phase 2 (Frontend customer + admin) — COMPLETED**.
-  - **Phase 3 (Verification / bug fixing / PWA checks) — COMPLETED**.
+  - Remove **all** installation prompting behavior/UI (no install CTA, no `beforeinstallprompt` handling).
+
+**Current status update**
+- **Phase 1 (Backend) — COMPLETED and smoke-tested**.
+- **Phase 2 (Frontend customer + admin) — COMPLETED**.
+- **Phase 3 (Verification / bug fixing / PWA checks) — COMPLETED**.
   - Testing Agent **iteration_2**: **backend 100%**, **frontend 100%**.
-  - **Phase 4 (Post-MVP browser-first UI revision) — COMPLETED**.
+- **Phase 4 (Post-MVP browser-first UI revision) — COMPLETED**.
   - Testing Agent **iteration_3**: **frontend 100%** (no regressions).
+- **Phase 5 (Content imagery + Birthday bookings) — IN PROGRESS**.
+  - Update content imagery placements per latest uploads.
+  - Add **Birthday Booking** feature: **Home page section + separate page CTA/form**.
 
 ---
 
@@ -133,7 +137,7 @@
    - Uploaded image **C** (`vv-bar-shot.jpg`) used in **Hours & Location / Venue** section.
 
 5. **Reinforced logo placement**
-   - Adopted the full uploaded logo (`vv-logo-full.png`) in hero + brand badge areas for stronger presence.
+   - Adopted the full uploaded logo (`vv-logo-full.png`) in hero + brand badge areas.
 
 6. **Regression testing**
    - Testing Agent **iteration_3**: **frontend 100%**; confirms:
@@ -142,19 +146,68 @@
      - Updated hero + images present
      - Core navigation and customer flows still functional
 
+
+### Phase 5 (IN PROGRESS): Content imagery mapping + Birthday bookings
+**Goal**
+- Apply the newest venue images to the correct content cards.
+- Add a **Birthday at Vaal Vibes** booking request capability:
+  - A **Home page section** teaser with CTA.
+  - A **dedicated Birthday Booking page** with a simple form.
+
+**Image mapping requirements (confirmed by user)**
+- **Hungry Platter Special** → `DSC_0965 (1).jpg`
+- **Bottle & Booth Night** → `DSC_0697 (1).jpg`
+- **Friday After Dark (event)** → `DSC_0495.jpg` (the one with people)
+
+**Birthday booking flow (new)**
+- **Home page**: add a prominent “Birthday bookings” section with:
+  - short copy (premium birthday experiences)
+  - CTA: “Plan your birthday” → navigates to birthday page
+- **Dedicated page** (route e.g. `/birthdays`): birthday request form fields:
+  - Full name
+  - Phone
+  - Email
+  - Birthday date (DOB)
+  - Preferred celebration date (if different)
+  - Time of arrival
+  - Number of guests
+  - Estimated budget (ZAR)
+  - Seating preference (indoor / patio / VIP)
+  - Special requests/notes (cake, DJ shoutout, booth decor)
+
+**Implementation steps**
+1. Add new images to `frontend/public` and wire them into:
+   - Specials cards (Hungry Platter, Bottle & Booth)
+   - Event card for “Friday After Dark”
+2. Add a new frontend page component for birthday bookings + routing.
+3. Backend support (if needed):
+   - Option A (preferred): reuse existing `/customer/requests` endpoint with `request_type="reservation"` and structured notes.
+   - Option B: add a dedicated `/customer/birthday-requests` endpoint + entity if you want separate reporting.
+4. Admin visibility:
+   - Ensure birthday requests are visible in Admin “Recent requests” (and optionally tagged in notes).
+5. Add `data-testid` attributes to every birthday form field and submit CTA.
+
+**Verification**
+- Test:
+  - home CTA navigates to birthday form
+  - submission success toast + reference ID (or confirmation message)
+  - admin requests list shows the submission
+
 ---
 
 ## 3) Next Actions (immediate)
-1. Handoff-ready documentation:
-   - Confirm demo credentials and MFA code are shared with stakeholders.
-   - List MOCKED features explicitly (campaign dispatch, QR promo display, image uploads, forgot password).
-2. Optional enhancements (post-MVP):
-   - Replace demo MFA with real TOTP.
-   - Add real email dispatch (SES) + unsubscribe flows.
-   - Add real image uploads (R2/S3) with resizing.
-   - Expand and normalize menu catalog ingestion (full PDF coverage) + search.
-3. Operational hardening:
-   - Add rate limits + structured logging, if needed.
+1. Add and wire the new images to:
+   - Hungry Platter Special
+   - Bottle & Booth Night
+   - Friday After Dark event
+2. Implement Birthday bookings:
+   - Home section + CTA
+   - Dedicated `/birthdays` page
+   - Submission wiring (reuse existing request flow or add endpoint)
+3. Re-run testing agent focusing on:
+   - visual placements
+   - birthday request flow
+   - ensuring no regressions in customer/admin flows
 
 ---
 
@@ -167,15 +220,20 @@
   - **No install prompt**, no install CTA, no install-related nags.
   - PWA technical assets remain for offline/caching support.
 - Visual updates:
-  - Hero tile uses **vv-hero-shot.jpg** with black background treatment.
-  - Uploaded images **vv-bottle-shot.jpg** and **vv-bar-shot.jpg** used appropriately.
-  - “Made with Emergent” removed/hidden.
-  - Logo presence enhanced tastefully.
+  - Correct mapping of latest images:
+    - Hungry Platter Special → `DSC_0965 (1).jpg`
+    - Bottle & Booth Night → `DSC_0697 (1).jpg`
+    - Friday After Dark → `DSC_0495.jpg`
+- Birthday bookings feature:
+  - Home section present with CTA.
+  - Dedicated birthday booking page with form.
+  - Request submission succeeds and is visible in admin requests.
 - Core flows still work end-to-end:
   - Customer: register/login, wallet promo display, request submission.
   - Admin: login (demo OTP), CRUD, promo validate/redeem.
 - Testability:
-  - `data-testid` coverage retained for primary actions.
+  - `data-testid` coverage retained/expanded (includes birthday form fields).
   - Verified test runs:
     - iteration_2: backend 100% + frontend 100%
     - iteration_3: frontend 100% after browser-first UI revision
+    - (new) iteration_4: birthday + imagery regression pass
