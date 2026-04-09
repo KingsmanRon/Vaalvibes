@@ -1,10 +1,14 @@
 [
   {
-    "content": "Fix low-priority birthday form selector issue and ensure demo wallet has an active promo",
+    "content": "Reproduce the runtime error and identify the failing request/stack trace",
     "status": "completed"
   },
   {
-    "content": "Re-test birthday booking and imagery updates",
+    "content": "Fix the root cause of the Unexpected token '<' error",
     "status": "completed"
+  },
+  {
+    "content": "Re-test public/customer/admin flows after the fix",
+    "status": "in_progress"
   }
 ]

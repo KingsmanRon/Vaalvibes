@@ -6,9 +6,21 @@ import App from "@/App";
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/sw.js").catch((error) => {
-      console.error("Service worker registration failed", error);
-    });
+    navigator.serviceWorker
+      .getRegistrations()
+      .then((registrations) => Promise.all(registrations.map((registration) => registration.unregister())))
+      .catch((error) => {
+        console.error("Service worker cleanup failed", error);
+      });
+
+    if (window.caches) {
+      window.caches
+        .keys()
+        .then((keys) => Promise.all(keys.filter((key) => key.startsWith("vaal-vibes-shell")).map((key) => window.caches.delete(key))))
+        .catch((error) => {
+          console.error("Cache cleanup failed", error);
+        });
+    }
   });
 }
 
