@@ -938,6 +938,10 @@ async def login_customer(payload: CustomerLoginRequest) -> AuthResponse:
     user = await db.customers.find_one({"email": email}, {"_id": 0})
     if not user or not verify_password(payload.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid credentials")
+    if user["email"] == "guest@vaalvibes.app":
+        active_demo_promo = await db.promo_codes.find_one({"user_id": user["id"], "status": "active"}, {"_id": 0})
+        if not active_demo_promo:
+            await issue_welcome_promo(user["id"])
     token = create_token(user["id"], "customer", user["name"], user["email"])
     latest_promo = serialize(await db.promo_codes.find_one({"user_id": user["id"]}, {"_id": 0}, sort=[("issued_at", -1)]))
     promo = None

@@ -1235,7 +1235,7 @@ function BirthdayPage() {
     email: "",
     phone: "",
     date_of_birth: "",
-    celebration_date: new Date(),
+    celebration_date: new Date().toISOString().split("T")[0],
     arrival_time: "19:00",
     guest_count: 10,
     estimated_budget: 2500,
@@ -1253,7 +1253,7 @@ function BirthdayPage() {
         email: formState.email,
         phone: formState.phone,
         date_of_birth: formState.date_of_birth,
-        celebration_date: buildIsoDateTime(formState.celebration_date, formState.arrival_time),
+        celebration_date: buildIsoDateTime(new Date(formState.celebration_date), formState.arrival_time),
         arrival_time: formState.arrival_time,
         guest_count: Number(formState.guest_count),
         estimated_budget: Number(formState.estimated_budget),
@@ -1268,7 +1268,7 @@ function BirthdayPage() {
         email: "",
         phone: "",
         date_of_birth: "",
-        celebration_date: new Date(),
+        celebration_date: new Date().toISOString().split("T")[0],
         arrival_time: "19:00",
         guest_count: 10,
         estimated_budget: 2500,
@@ -1332,7 +1332,9 @@ function BirthdayPage() {
               <Field label="Date of birth" testId="birthday-dob-input-field">
                 <Input data-testid="birthday-dob-input" value={formState.date_of_birth} onChange={(event) => setFormState((current) => ({ ...current, date_of_birth: event.target.value }))} placeholder="YYYY-MM-DD" />
               </Field>
-              <DatePickerField label="Celebration date" value={formState.celebration_date} onChange={(date) => setFormState((current) => ({ ...current, celebration_date: date }))} testId="birthday-celebration-date-picker" buttonTestId="birthday-celebration-date-button" />
+              <Field label="Celebration date" testId="birthday-celebration-date-field">
+                <Input data-testid="birthday-celebration-date-input" type="date" value={formState.celebration_date} onChange={(event) => setFormState((current) => ({ ...current, celebration_date: event.target.value }))} />
+              </Field>
               <Field label="Arrival time" testId="birthday-arrival-time-input-field">
                 <Input data-testid="birthday-arrival-time-input" value={formState.arrival_time} onChange={(event) => setFormState((current) => ({ ...current, arrival_time: event.target.value }))} placeholder="19:00" />
               </Field>
@@ -2818,9 +2820,10 @@ function SkeletonPanel() {
 }
 
 function Field({ label, children, testId }) {
+  const existingTestId = isValidElement(children) ? children.props?.["data-testid"] : undefined;
   const fieldChild = isValidElement(children)
     ? cloneElement(children, {
-        "data-testid": testId,
+        "data-testid": existingTestId || testId,
       })
     : children;
 
