@@ -438,6 +438,18 @@ def build_birthday_notes(payload: BirthdayBookingCreate) -> str:
     return " | ".join(extras)
 
 
+async def ensure_demo_customer_active_promo() -> None:
+    demo_customer = await db.customers.find_one({"email": "guest@vaalvibes.app"}, {"_id": 0})
+    if not demo_customer:
+        return
+    active_promo = await db.promo_codes.find_one(
+        {"user_id": demo_customer["id"], "status": "active"},
+        {"_id": 0},
+    )
+    if not active_promo:
+        await issue_welcome_promo(demo_customer["id"])
+
+
 async def append_audit_log(actor: dict, action: str, entity_type: str, entity_id: str, summary: str) -> None:
     entry = AuditLogEntry(
         actor_id=actor["id"],
@@ -1332,6 +1344,7 @@ logger = logging.getLogger(__name__)
 async def startup_tasks() -> None:
     await seed_database()
     await repair_promo_signatures()
+    await ensure_demo_customer_active_promo()
     logger.info("Vaal Vibes API startup complete")
 
 

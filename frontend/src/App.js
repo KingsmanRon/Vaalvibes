@@ -1342,9 +1342,9 @@ function BirthdayPage() {
               <Field label="Estimated budget (ZAR)" testId="birthday-budget-input">
                 <Input value={formState.estimated_budget} onChange={(event) => setFormState((current) => ({ ...current, estimated_budget: event.target.value }))} />
               </Field>
-              <Field label="Seating preference" testId="birthday-seating-select">
+              <Field label="Seating preference" testId="birthday-seating-select-field">
                 <Select value={formState.seating_preference} onValueChange={(value) => setFormState((current) => ({ ...current, seating_preference: value }))}>
-                  <SelectTrigger><SelectValue placeholder="Choose seating" /></SelectTrigger>
+                  <SelectTrigger data-testid="birthday-seating-select"><SelectValue placeholder="Choose seating" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="indoor">Indoor</SelectItem>
                     <SelectItem value="patio">Patio</SelectItem>
