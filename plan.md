@@ -1,8 +1,8 @@
 # Vaal Vibes PWA — plan.md
 
 ## 1) Objectives
-- Deliver a branded **Vaal Vibes** web experience (**exact black/white/gold**) with both **Customer PWA** + **Admin Console**.
-- Core business flows (MVP, delivered):
+- Deliver a branded **Vaal Vibes** web experience (**exact black/white/gold**) with both **Customer Web App** + **Admin Console**.
+- Core business flows (**delivered and verified**):
   - Publish **menu / events / specials** (public).
   - Capture **customer signups + login**.
   - **Issue + display promo codes** in a customer wallet.
@@ -15,9 +15,14 @@
     - Customer QR promo display
     - Image uploads
     - Forgot password
-- Browser-first UX requirement (delivered):
+- Browser-first UX requirement (**delivered**):
   - Keep technical PWA support (manifest + service worker) for offline shell/caching.
   - Remove **all** installation prompting behavior/UI (no install CTA, no `beforeinstallprompt` handling).
+- New growth feature (**delivered**):
+  - Add **Birthday bookings** intake:
+    - **Home page** section + CTA
+    - Dedicated **/birthdays** page with a public booking form
+    - Backend ingestion via **/api/public/birthday-requests** and visibility in admin requests.
 
 **Current status update**
 - **Phase 1 (Backend) — COMPLETED and smoke-tested**.
@@ -26,9 +31,11 @@
   - Testing Agent **iteration_2**: **backend 100%**, **frontend 100%**.
 - **Phase 4 (Post-MVP browser-first UI revision) — COMPLETED**.
   - Testing Agent **iteration_3**: **frontend 100%** (no regressions).
-- **Phase 5 (Content imagery + Birthday bookings) — IN PROGRESS**.
-  - Update content imagery placements per latest uploads.
-  - Add **Birthday Booking** feature: **Home page section + separate page CTA/form**.
+- **Phase 5 (Content imagery + Birthday bookings) — COMPLETED**.
+  - Title-based imagery mapping implemented for key specials/events.
+  - Birthday booking section + page + backend endpoint implemented.
+  - Follow-up hardening fixes applied.
+  - Testing Agent **iteration_5**: **backend 100%**, **frontend 100%** (no regressions).
 
 ---
 
@@ -61,6 +68,7 @@
   - Atomic redemption + redemption logging + audit logging.
 - Hardening / fixes:
   - Backend startup runs **promo signature repair** for any legacy/seeded promo codes.
+  - Backend startup ensures demo customer `guest@vaalvibes.app` has at least one **active promo**.
 - Smoke testing completed:
   - Registration → wallet retrieval → request creation → admin login → promo validate → promo redeem.
 
@@ -147,67 +155,73 @@
      - Core navigation and customer flows still functional
 
 
-### Phase 5 (IN PROGRESS): Content imagery mapping + Birthday bookings
+### Phase 5 (COMPLETED): Content imagery mapping + Birthday bookings
 **Goal**
-- Apply the newest venue images to the correct content cards.
+- Apply venue images to specific content cards.
 - Add a **Birthday at Vaal Vibes** booking request capability:
   - A **Home page section** teaser with CTA.
-  - A **dedicated Birthday Booking page** with a simple form.
+  - A **dedicated /birthdays page** with a public form.
+  - Backend ingestion endpoint for birthday requests.
 
-**Image mapping requirements (confirmed by user)**
-- **Hungry Platter Special** → `DSC_0965 (1).jpg`
-- **Bottle & Booth Night** → `DSC_0697 (1).jpg`
-- **Friday After Dark (event)** → `DSC_0495.jpg` (the one with people)
+**Delivered**
+1. **Title-based imagery mapping (frontend)**
+   - Implemented deterministic mapping so that:
+     - **Hungry Platter Special** → `vv-hungry-platter.jpg`
+     - **Bottle & Booth Night** → `vv-bottle-booth.jpg`
+     - **Friday After Dark** → `vv-friday-after-dark.jpg` (people/crowd image)
+   - Mapping applied on:
+     - Home Specials cards
+     - Home Upcoming Events cards
+     - Events listing view
 
-**Birthday booking flow (new)**
-- **Home page**: add a prominent “Birthday bookings” section with:
-  - short copy (premium birthday experiences)
-  - CTA: “Plan your birthday” → navigates to birthday page
-- **Dedicated page** (route e.g. `/birthdays`): birthday request form fields:
-  - Full name
-  - Phone
-  - Email
-  - Birthday date (DOB)
-  - Preferred celebration date (if different)
-  - Time of arrival
-  - Number of guests
-  - Estimated budget (ZAR)
-  - Seating preference (indoor / patio / VIP)
-  - Special requests/notes (cake, DJ shoutout, booth decor)
+2. **Birthday booking experience (frontend)**
+   - Added a **Home page “Birthday bookings”** section with CTA.
+   - Added dedicated route **`/birthdays`** with a public form containing:
+     - Full name
+     - Phone
+     - Email
+     - Date of birth (DOB)
+     - Celebration date
+     - Arrival time
+     - Number of guests
+     - Estimated budget (ZAR)
+     - Seating preference (indoor / patio / VIP)
+     - Bottle service interest (toggle)
+     - Notes
+   - Added `data-testid` to all fields; ensured seating selector is directly testable via `data-testid="birthday-seating-select"`.
 
-**Implementation steps**
-1. Add new images to `frontend/public` and wire them into:
-   - Specials cards (Hungry Platter, Bottle & Booth)
-   - Event card for “Friday After Dark”
-2. Add a new frontend page component for birthday bookings + routing.
-3. Backend support (if needed):
-   - Option A (preferred): reuse existing `/customer/requests` endpoint with `request_type="reservation"` and structured notes.
-   - Option B: add a dedicated `/customer/birthday-requests` endpoint + entity if you want separate reporting.
-4. Admin visibility:
-   - Ensure birthday requests are visible in Admin “Recent requests” (and optionally tagged in notes).
-5. Add `data-testid` attributes to every birthday form field and submit CTA.
+3. **Birthday request ingestion (backend)**
+   - Added endpoint: **POST `/api/public/birthday-requests`**.
+   - Stores birthday requests into the existing `requests` collection using:
+     - `request_type="birthday-booking"`
+     - fields like `customer_name`, `customer_email`, `estimated_budget`, `arrival_time`, `seating_preference`, `date_of_birth`, `bottle_service`
+   - Requests are **admin-visible** via existing admin requests listing/dashboard.
 
-**Verification**
-- Test:
-  - home CTA navigates to birthday form
-  - submission success toast + reference ID (or confirmation message)
-  - admin requests list shows the submission
+4. **Follow-up hardening**
+   - Backend startup ensures demo customer (`guest@vaalvibes.app`) always has at least one **active promo** (prevents intermittent wallet/promo tests failing).
+
+5. **Verification**
+   - Testing Agent **iteration_5**: **backend 100%**, **frontend 100%**; confirms:
+     - Image mappings correct
+     - Birthday section + page + submission works
+     - Admin can see birthday requests
+     - Demo wallet active promo present
+     - No regressions in navigation or admin tools
 
 ---
 
 ## 3) Next Actions (immediate)
-1. Add and wire the new images to:
-   - Hungry Platter Special
-   - Bottle & Booth Night
-   - Friday After Dark event
-2. Implement Birthday bookings:
-   - Home section + CTA
-   - Dedicated `/birthdays` page
-   - Submission wiring (reuse existing request flow or add endpoint)
-3. Re-run testing agent focusing on:
-   - visual placements
-   - birthday request flow
-   - ensuring no regressions in customer/admin flows
+Since Phase 5 is complete, next actions are optional enhancements:
+1. **Admin quality-of-life (optional)**
+   - Add an admin filter chip for `request_type` including `birthday-booking`.
+   - Add a “Birthday bookings” KPI tile.
+2. **Operational readiness (optional)**
+   - Add rate limiting for public birthday requests.
+   - Add spam protection (simple honeypot field) if needed.
+3. **Real integrations (post-MVP)**
+   - Replace demo MFA with real TOTP.
+   - Add real email dispatch (SES) + unsubscribe flows.
+   - Add real image upload pipeline (R2/S3) with resizing.
 
 ---
 
@@ -221,13 +235,14 @@
   - PWA technical assets remain for offline/caching support.
 - Visual updates:
   - Correct mapping of latest images:
-    - Hungry Platter Special → `DSC_0965 (1).jpg`
-    - Bottle & Booth Night → `DSC_0697 (1).jpg`
-    - Friday After Dark → `DSC_0495.jpg`
+    - Hungry Platter Special → `vv-hungry-platter.jpg`
+    - Bottle & Booth Night → `vv-bottle-booth.jpg`
+    - Friday After Dark → `vv-friday-after-dark.jpg`
 - Birthday bookings feature:
   - Home section present with CTA.
-  - Dedicated birthday booking page with form.
-  - Request submission succeeds and is visible in admin requests.
+  - Dedicated `/birthdays` page with a public form.
+  - Submission succeeds and returns a reference ID.
+  - Admin requests list/dashboard shows birthday submissions.
 - Core flows still work end-to-end:
   - Customer: register/login, wallet promo display, request submission.
   - Admin: login (demo OTP), CRUD, promo validate/redeem.
@@ -236,4 +251,4 @@
   - Verified test runs:
     - iteration_2: backend 100% + frontend 100%
     - iteration_3: frontend 100% after browser-first UI revision
-    - (new) iteration_4: birthday + imagery regression pass
+    - iteration_5: backend 100% + frontend 100% after Phase 5 updates

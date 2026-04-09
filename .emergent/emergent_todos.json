@@ -1,10 +1,10 @@
 [
   {
     "content": "Fix low-priority birthday form selector issue and ensure demo wallet has an active promo",
-    "status": "in_progress"
+    "status": "completed"
   },
   {
     "content": "Re-test birthday booking and imagery updates",
-    "status": "pending"
+    "status": "completed"
   }
 ]
