@@ -607,7 +607,7 @@ async def seed_database() -> None:
     events = [
         EventItem(
             title="Friday After Dark",
-            date=datetime(2026, 4, 11, 20, 0, 0, tzinfo=timezone.utc),
+            date=datetime(2026, 4, 10, 20, 0, 0, tzinfo=timezone.utc),
             description="A premium Friday link-up with deep house selectors, bottle service tables, and late-night braai platters.",
             lineup=["BINOBOY", "TROSHKA", "B&T MUSIQ", "LEMONADE"],
             image_url="/fridayafterdark.PNG",
@@ -862,7 +862,7 @@ async def get_public_bootstrap() -> PublicBootstrapResponse:
             "Sat · 12:00 - 02:00",
             "Sun · 12:00 - 21:00",
         ],
-        service_note="Where Luxury Lifestyle meets exceptional Vibes 16 Fraser Street, Vanderbijlpark, Gauteng 1900",
+        service_note="16 Fraser Street, Vanderbijlpark, Gauteng 1900",
     )
 
 
