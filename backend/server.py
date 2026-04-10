@@ -808,23 +808,12 @@ async def seed_database() -> None:
         },
     ]
 
-    demo_customer = {
-        "id": str(uuid.uuid4()),
-        "name": "Demo Customer",
-        "email": "guest@vaalvibes.app",
-        "phone": "+27 71 000 0000",
-        "password_hash": hash_password("VaalVibes!123"),
-        "dob": "1997-07-18",
-        "preferences": UserPreferencePayload().model_dump(),
-        "created_at": now,
-    }
+    demo_customer = None  # No demo customer seeded in live environment
 
     await db.menu_categories.insert_many([category.model_dump() for category in menu_categories])
     await db.promo_pools.insert_one(promo_pool.model_dump())
     await db.campaigns.insert_many([campaign.model_dump() for campaign in campaigns])
     await db.admin_users.insert_many(admin_users)
-    await db.customers.insert_one(demo_customer)
-    promo = await issue_welcome_promo(demo_customer["id"])
     await db.audit_logs.insert_one(
         AuditLogEntry(
             actor_id=admin_users[0]["id"],
@@ -832,7 +821,7 @@ async def seed_database() -> None:
             action="seed",
             entity_type="system",
             entity_id="seed-data",
-            summary=f"Seeded demo content and issued promo {promo.code}",
+            summary="Seeded Vaal Vibes live environment data",
         ).model_dump()
     )
 

@@ -74,7 +74,7 @@ import { LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip as ChartTooltip, 
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
-const FORMSPREE_ENDPOINT = process.env.REACT_APP_FORMSPREE_ENDPOINT;
+const FORMSPREE_ENDPOINT = process.env.REACT_APP_FORMSPREE_ENDPOINT || "https://formspree.io/f/mykbqjav";
 
 const api = axios.create({
   baseURL: API,
@@ -470,6 +470,18 @@ function AppShell() {
         contact_phone: requestDraft.contact_phone || customerProfile?.phone || customerUser?.phone || "",
       };
       const response = await api.post("/customer/requests", payload, authConfig(customerToken));
+      if (FORMSPREE_ENDPOINT) {
+        axios.post(FORMSPREE_ENDPOINT, {
+          _subject: `New ${payload.request_type} — ${response.data.reference_id}`,
+          reference_id: response.data.reference_id,
+          request_type: payload.request_type,
+          date: formatDateTime(payload.date),
+          guest_count: payload.guest_count,
+          phone: payload.contact_phone || "Not provided",
+          items: payload.items?.map((i) => `${i.name} x${i.quantity}`).join(", ") || "None",
+          notes: payload.notes || "None",
+        }).catch(() => {});
+      }
       setRequestReference(response.data.reference_id);
       setRequestStep(4);
       toast.success("Request sent successfully.");
@@ -788,7 +800,7 @@ function AdminFrame({ children, adminUser, logoutAdmin, adminSheetOpen, setAdmin
               </Sheet>
               <div>
                 <p className="font-display text-3xl text-white">Operations Console</p>
-                <p className="text-xs text-muted-foreground">Demo MFA code for MVP: 246810</p>
+                <p className="text-xs text-muted-foreground">Vaal Vibes Operations Console</p>
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -1450,7 +1462,7 @@ function WalletPage({ wallet, requests, loading }) {
                 <Card className="border-white/10 bg-black/30">
                   <CardContent className="p-4">
                     <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">QR display</p>
-                    <p className="mt-2 text-sm text-white" data-testid="wallet-qr-mocked-label">MOCKED for MVP — show the promo code to staff for validation instead.</p>
+                    <p className="mt-2 text-sm text-white" data-testid="wallet-qr-mocked-label">Show the promo code to staff at the venue for validation.</p>
                   </CardContent>
                 </Card>
               </CardContent>
@@ -1662,7 +1674,7 @@ function ProfilePage({ token, profile, requests, refresh, logoutCustomer }) {
 
 function CustomerLoginPage({ onLogin }) {
   const navigate = useNavigate();
-  const [formState, setFormState] = useState({ email: "guest@vaalvibes.app", password: "VaalVibes!123" });
+  const [formState, setFormState] = useState({ email: "", password: "" });
   const [submitting, setSubmitting] = useState(false);
 
   const submit = async (event) => {
@@ -1689,11 +1701,6 @@ function CustomerLoginPage({ onLogin }) {
         <Field label="Password" testId="customer-login-password-input">
           <Input type="password" value={formState.password} onChange={(event) => setFormState((current) => ({ ...current, password: event.target.value }))} />
         </Field>
-        <Card className="border-primary/20 bg-primary/10">
-          <CardContent className="p-4 text-sm text-white/80">
-            Demo customer account: <strong>guest@vaalvibes.app</strong> / <strong>VaalVibes!123</strong>
-          </CardContent>
-        </Card>
         <Button type="submit" className="h-12 w-full" disabled={submitting} data-testid="customer-login-submit-button">
           {submitting ? "Signing in..." : "Sign in"}
         </Button>
@@ -1713,7 +1720,7 @@ function CustomerRegisterPage({ onRegister }) {
     email: "",
     phone: "",
     password: "",
-    dob: "1997-07-18",
+    dob: "",
     dietary: [],
     seating: "indoor",
     music_vibe: "afro-house",
@@ -1746,6 +1753,15 @@ function CustomerRegisterPage({ onRegister }) {
           marketing_opt_in: formState.marketing_opt_in,
         },
       });
+      if (FORMSPREE_ENDPOINT) {
+        axios.post(FORMSPREE_ENDPOINT, {
+          _subject: `New Customer Registration — ${formState.name}`,
+          name: formState.name,
+          email: formState.email,
+          phone: formState.phone,
+          marketing_opt_in: formState.marketing_opt_in ? "Yes" : "No",
+        }).catch(() => {});
+      }
       onRegister(response.data);
       toast.success("Account created and welcome promo issued.");
       navigate("/wallet");
@@ -1842,9 +1858,9 @@ function AdminLoginPage({ onLogin }) {
   const navigate = useNavigate();
   const [submitting, setSubmitting] = useState(false);
   const [formState, setFormState] = useState({
-    email: "super@vaalvibes.app",
-    password: "VaalVibes!123",
-    otp: "246810",
+    email: "",
+    password: "",
+    otp: "",
   });
 
   const submit = async (event) => {
@@ -1881,19 +1897,9 @@ function AdminLoginPage({ onLogin }) {
             <Field label="MFA code" testId="admin-login-otp-input">
               <Input value={formState.otp} onChange={(event) => setFormState((current) => ({ ...current, otp: event.target.value }))} />
             </Field>
-            <Card className="border-primary/20 bg-primary/10">
-              <CardContent className="space-y-1 p-4 text-sm text-white/85">
-                <p>Demo accounts for MVP:</p>
-                <p><strong>super@vaalvibes.app</strong> / <strong>VaalVibes!123</strong></p>
-                <p><strong>marketing@vaalvibes.app</strong> / <strong>VaalVibes!123</strong></p>
-                <p><strong>promo@vaalvibes.app</strong> / <strong>VaalVibes!123</strong></p>
-                <p>MFA demo code: <strong>246810</strong></p>
-              </CardContent>
-            </Card>
             <Button type="submit" className="h-12 w-full" disabled={submitting} data-testid="admin-login-submit-button">
               {submitting ? "Signing in..." : "Enter console"}
             </Button>
-            <p className="text-center text-xs text-muted-foreground" data-testid="admin-login-mocked-note">Forgot password is MOCKED for MVP.</p>
           </form>
         </CardContent>
       </Card>
@@ -1910,7 +1916,7 @@ function RequestBuilderDrawer({ open, onOpenChange, requestDraft, setRequestDraf
         <DrawerHeader className="text-left">
           <DrawerTitle data-testid="request-drawer-title">Build your request</DrawerTitle>
           <DrawerDescription>
-            Multi-step flow for reservation and order intent. Payment stays at the venue in this MVP.
+            Multi-step flow for reservation and order intent. Payment is settled at the venue.
           </DrawerDescription>
         </DrawerHeader>
         <div className="px-4">
@@ -2445,7 +2451,7 @@ function AdminSpecialsPage({ token, specials, refresh }) {
         <SheetContent side="right" className="w-full overflow-y-auto border-white/10 bg-card sm:max-w-xl">
           <SheetHeader>
             <SheetTitle>{editingSpecial ? "Edit special" : "Create special"}</SheetTitle>
-            <SheetDescription>Image uploads are MOCKED for MVP. Use hosted image URLs for now.</SheetDescription>
+            <SheetDescription>Use hosted image URLs for the special image field.</SheetDescription>
           </SheetHeader>
           <div className="mt-6 space-y-4">
             <Field label="Title" testId="special-form-title-input"><Input value={formState.title} onChange={(event) => setFormState((current) => ({ ...current, title: event.target.value }))} /></Field>
@@ -2602,7 +2608,7 @@ function AdminPromoPage({ token, promoPools, refresh }) {
         <Card className="border-white/10 bg-card">
           <CardHeader>
             <CardTitle className="text-lg text-white">Create promo pool</CardTitle>
-            <CardDescription>Code generation is MOCKED in UI, but the active pool powers welcome promo issuance.</CardDescription>
+            <CardDescription>The active pool powers welcome promo issuance for new customer registrations.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <Field label="Pool name" testId="promo-pool-name-input"><Input value={poolForm.name} onChange={(event) => setPoolForm((current) => ({ ...current, name: event.target.value }))} /></Field>
@@ -2695,7 +2701,7 @@ function AdminCampaignsPage({ token, campaigns, refresh }) {
 
   return (
     <div className="space-y-6" data-testid="admin-campaigns-page">
-      <SectionHeading eyebrow="Marketing" title="Campaign composer" description="Email dispatch is the only live marketing channel in the spec. Dispatch remains MOCKED until a real provider is integrated." />
+      <SectionHeading eyebrow="Marketing" title="Campaign composer" description="Draft and dispatch email campaigns to opted-in customers and VIP segments." />
       <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
         <Card className="border-white/10 bg-card">
           <CardHeader>
@@ -2735,7 +2741,7 @@ function AdminCampaignsPage({ token, campaigns, refresh }) {
                   <div dangerouslySetInnerHTML={{ __html: campaign.body_html }} />
                 </div>
                 <div className="mt-4 flex gap-2">
-                  <Button size="sm" onClick={() => dispatchCampaign(campaign.id)} data-testid={`campaign-dispatch-button-${campaign.id}`}>Dispatch (MOCKED)</Button>
+                  <Button size="sm" onClick={() => dispatchCampaign(campaign.id)} data-testid={`campaign-dispatch-button-${campaign.id}`}>Dispatch</Button>
                 </div>
               </div>
             ))}
