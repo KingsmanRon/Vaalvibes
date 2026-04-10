@@ -1086,7 +1086,7 @@ function HomePage({ bootstrap, loading, error, onOpenRequest, onOpenSpecial }) {
               <AccordionItem value="address" className="border-white/10">
                 <AccordionTrigger className="text-white">Venue experience</AccordionTrigger>
                 <AccordionContent>
-                  <p className="text-sm text-muted-foreground">Matte-black surfaces, gold highlights, premium bottle moments, and mobile-first request flows for customers and staff.</p>
+                  <p className="text-sm text-muted-foreground">Where Luxury Lifestyle meets exceptional Vibes — matte-black surfaces, gold highlights, and premium bottle moments.</p>
                 </AccordionContent>
               </AccordionItem>
             </Accordion>
