@@ -74,7 +74,7 @@ import { LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip as ChartTooltip, 
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
-const FORMSPREE_ENDPOINT = process.env.REACT_APP_FORMSPREE_ENDPOINT;
+const FORMSPREE_ENDPOINT = process.env.REACT_APP_FORMSPREE_ENDPOINT || "https://formspree.io/f/mykbqjav";
 
 const api = axios.create({
   baseURL: API,
