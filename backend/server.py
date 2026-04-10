@@ -624,13 +624,13 @@ async def seed_database() -> None:
             cta_label="Request Booking",
         ),
         EventItem(
-            title="Sunday Grill & Chill",
+            title="FOOTBALL LEAGUE",
             date=datetime(2026, 4, 14, 12, 0, 0, tzinfo=timezone.utc),
             description="Come get your fitness on with our Tuesday League and Friendlies on Thursday.",
             lineup=["14 & 16 April 2026"],
             image_url="/soccer.jpg",
             status="scheduled",
-            cta_label="Reserve Table",
+            cta_label="Request Booking",
         ),
     ]
     specials = [
