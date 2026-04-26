@@ -6,12 +6,14 @@ import { useTheme } from "next-themes";
 import {
   AlertTriangle,
   BellRing,
+  BookOpen,
   CalendarDays,
   Check,
   ChevronRight,
   ClipboardCheck,
   Clock3,
   Home,
+  Image,
   LayoutDashboard,
   LogOut,
   MapPin,
@@ -75,6 +77,9 @@ import { LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip as ChartTooltip, 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
 const FORMSPREE_ENDPOINT = process.env.REACT_APP_FORMSPREE_ENDPOINT || "https://formspree.io/f/mykbqjav";
+const POSTERS_FOLDER_URL =
+  process.env.REACT_APP_POSTERS_FOLDER_URL ||
+  "https://drive.google.com/drive/folders/REPLACE_WITH_DRIVE_FOLDER_ID";
 
 const api = axios.create({
   baseURL: API,
@@ -101,6 +106,7 @@ const defaultBootstrap = {
   menu: [],
   events: [],
   specials: [],
+  gallery: [],
   venue_hours: [],
   service_note: "Pay at venue only.",
 };
@@ -119,6 +125,8 @@ const adminLinks = [
   { to: "/admin", label: "Dashboard", icon: LayoutDashboard },
   { to: "/admin/events", label: "Events", icon: CalendarDays },
   { to: "/admin/specials", label: "Specials", icon: UtensilsCrossed },
+  { to: "/admin/menu", label: "Menu", icon: BookOpen },
+  { to: "/admin/gallery", label: "Gallery", icon: Image },
   { to: "/admin/promo", label: "Promo Desk", icon: TicketPercent },
   { to: "/admin/campaigns", label: "Campaigns", icon: Megaphone },
   { to: "/admin/users", label: "Users", icon: Users },
@@ -129,6 +137,7 @@ const customerLinks = [
   { to: "/", label: "Home", icon: Home },
   { to: "/menu", label: "Menu", icon: UtensilsCrossed },
   { to: "/events", label: "Events", icon: CalendarDays },
+  { to: "/gallery", label: "Gallery", icon: Image },
   { to: "/wallet", label: "Wallet", icon: Wallet },
   { to: "/profile", label: "Profile", icon: UserRound },
 ];
@@ -255,6 +264,8 @@ function AppShell() {
   const [adminDashboard, setAdminDashboard] = useState(null);
   const [adminEvents, setAdminEvents] = useState([]);
   const [adminSpecials, setAdminSpecials] = useState([]);
+  const [adminMenu, setAdminMenu] = useState([]);
+  const [adminGallery, setAdminGallery] = useState([]);
   const [promoPools, setPromoPools] = useState([]);
   const [campaigns, setCampaigns] = useState([]);
   const [adminUsers, setAdminUsers] = useState([]);
@@ -349,6 +360,8 @@ function AppShell() {
       setAdminDashboard(null);
       setAdminEvents([]);
       setAdminSpecials([]);
+      setAdminMenu([]);
+      setAdminGallery([]);
       setPromoPools([]);
       setCampaigns([]);
       setAdminUsers([]);
@@ -363,6 +376,8 @@ function AppShell() {
         dashboardResponse,
         eventsResponse,
         specialsResponse,
+        menuResponse,
+        galleryResponse,
         poolsResponse,
         campaignsResponse,
         usersResponse,
@@ -372,6 +387,8 @@ function AppShell() {
         api.get("/admin/dashboard", authConfig(token)),
         api.get("/admin/events", authConfig(token)),
         api.get("/admin/specials", authConfig(token)),
+        api.get("/admin/menu/categories", authConfig(token)),
+        api.get("/admin/gallery", authConfig(token)),
         api.get("/admin/promo-pools", authConfig(token)),
         api.get("/admin/campaigns", authConfig(token)),
         api.get("/admin/users", authConfig(token)),
@@ -381,6 +398,8 @@ function AppShell() {
       setAdminDashboard(dashboardResponse.data);
       setAdminEvents(eventsResponse.data);
       setAdminSpecials(specialsResponse.data);
+      setAdminMenu(menuResponse.data);
+      setAdminGallery(galleryResponse.data);
       setPromoPools(poolsResponse.data);
       setCampaigns(campaignsResponse.data);
       setAdminUsers(usersResponse.data);
@@ -546,6 +565,26 @@ function AppShell() {
               }
             />
             <Route
+              path="/admin/menu"
+              element={
+                adminToken ? (
+                  <AdminMenuPage token={adminToken} categories={adminMenu} refresh={loadAdminData} />
+                ) : (
+                  <Navigate to="/admin/login" replace />
+                )
+              }
+            />
+            <Route
+              path="/admin/gallery"
+              element={
+                adminToken ? (
+                  <AdminGalleryPage token={adminToken} photos={adminGallery} refresh={loadAdminData} />
+                ) : (
+                  <Navigate to="/admin/login" replace />
+                )
+              }
+            />
+            <Route
               path="/admin/promo"
               element={
                 adminToken ? (
@@ -617,6 +656,10 @@ function AppShell() {
                 onOpenRequest={openReservationRequest}
               />
             }
+          />
+          <Route
+            path="/gallery"
+            element={<GalleryPage photos={bootstrap.gallery || []} loading={bootstrapLoading} />}
           />
           <Route path="/birthdays" element={<BirthdayPage />} />
           <Route
@@ -744,7 +787,7 @@ function CustomerFrame({ children, customerUser, theme, setTheme, logoutCustomer
 function CustomerBottomNav() {
   return (
     <nav className="fixed inset-x-0 bottom-0 z-[140] border-t border-white/10 bg-[#111111]/92 backdrop-blur-xl pb-[env(safe-area-inset-bottom)]" data-testid="customer-bottom-nav">
-      <div className="mx-auto grid max-w-[560px] grid-cols-5 gap-1 px-2 py-2">
+      <div className="mx-auto grid max-w-[560px] grid-cols-6 gap-1 px-2 py-2">
         {customerLinks.map((item) => {
           const Icon = item.icon;
           return (
@@ -1200,6 +1243,204 @@ function MenuPage({ bootstrap, loading, onAddToRequest }) {
   );
 }
 
+const DRIVE_FILE_ID_REGEX = /\/d\/([a-zA-Z0-9_-]+)|[?&]id=([a-zA-Z0-9_-]+)/;
+
+const extractDriveFileId = (input = "") => {
+  if (!input) return "";
+  const match = input.match(DRIVE_FILE_ID_REGEX);
+  if (match) {
+    return match[1] || match[2] || "";
+  }
+  return input.trim();
+};
+
+const driveThumbnailUrl = (fileId, size = "w1600") =>
+  fileId ? `https://drive.google.com/thumbnail?id=${fileId}&sz=${size}` : "";
+
+function GalleryPage({ photos, loading }) {
+  const [activePhoto, setActivePhoto] = useState(null);
+  const [removalOpen, setRemovalOpen] = useState(false);
+  const list = Array.isArray(photos) ? photos : [];
+
+  if (loading) {
+    return <SkeletonPanel />;
+  }
+
+  const openLightbox = (photo) => {
+    setActivePhoto(photo);
+  };
+
+  const closeLightbox = (open) => {
+    if (!open) {
+      setActivePhoto(null);
+    }
+  };
+
+  const openRemoval = () => {
+    setRemovalOpen(true);
+  };
+
+  return (
+    <div className="space-y-6" data-testid="gallery-page">
+      <SectionHeading
+        eyebrow="Memories"
+        title="Vaal Vibes gallery"
+        description="A taste of nights past — line-ups, plates, and the crowd that makes the venue tick."
+      />
+      {list.length === 0 ? (
+        <EmptyState
+          title="No gallery photos yet."
+          body="Once the team uploads memories, they will appear right here."
+        />
+      ) : (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3" data-testid="gallery-grid">
+          {list.map((photo) => (
+            <button
+              key={photo.id}
+              type="button"
+              onClick={() => openLightbox(photo)}
+              className="group overflow-hidden rounded-2xl border border-white/10 bg-card text-left transition-colors hover:border-primary/40"
+              data-testid={`gallery-tile-${photo.id}`}
+            >
+              <img
+                loading="lazy"
+                src={driveThumbnailUrl(photo.drive_file_id, "w1600")}
+                alt={photo.caption || "Vaal Vibes gallery photo"}
+                className="aspect-[4/3] w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+              />
+              {photo.caption ? (
+                <div className="border-t border-white/5 px-4 py-3 text-sm text-muted-foreground">
+                  {photo.caption}
+                </div>
+              ) : null}
+            </button>
+          ))}
+        </div>
+      )}
+      <Dialog open={Boolean(activePhoto)} onOpenChange={closeLightbox}>
+        <DialogContent className="max-w-3xl border-white/10 bg-card">
+          {activePhoto ? (
+            <>
+              <DialogHeader>
+                <DialogTitle className="font-display text-2xl text-white">
+                  {activePhoto.caption || "Vaal Vibes gallery"}
+                </DialogTitle>
+                <DialogDescription>
+                  Spot yourself? Request removal and the team will take it down.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="overflow-hidden rounded-2xl border border-white/10 bg-black">
+                <img
+                  src={driveThumbnailUrl(activePhoto.drive_file_id, "w2400")}
+                  alt={activePhoto.caption || "Vaal Vibes gallery photo"}
+                  className="max-h-[70vh] w-full object-contain"
+                />
+              </div>
+              <div className="flex flex-wrap justify-end gap-2 pt-3">
+                <Button
+                  variant="outline"
+                  onClick={openRemoval}
+                  data-testid="gallery-request-removal-button"
+                >
+                  Request removal
+                </Button>
+              </div>
+              <RemovalRequestDialog
+                open={removalOpen}
+                onOpenChange={setRemovalOpen}
+                photo={activePhoto}
+              />
+            </>
+          ) : null}
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function RemovalRequestDialog({ open, onOpenChange, photo }) {
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [reason, setReason] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!open) {
+      setName("");
+      setEmail("");
+      setReason("");
+      setSubmitting(false);
+    }
+  }, [open]);
+
+  const submit = async () => {
+    if (!photo) return;
+    if (!name.trim() || !email.trim() || !reason.trim()) {
+      toast.error("Please fill in your name, email, and reason.");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await axios.post(FORMSPREE_ENDPOINT, {
+        _subject: `Gallery removal request — photo ${photo.drive_file_id}`,
+        photo_id: photo.id,
+        drive_file_id: photo.drive_file_id,
+        caption: photo.caption || "",
+        name,
+        email,
+        reason,
+      });
+      toast.success("Removal request sent. The team will be in touch.");
+      onOpenChange(false);
+    } catch (error) {
+      toast.error("Could not send removal request. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="border-white/10 bg-card">
+        <DialogHeader>
+          <DialogTitle>Request photo removal</DialogTitle>
+          <DialogDescription>
+            Share your details and we will follow up within one business day.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <Field label="Your name" testId="removal-form-name-input">
+            <Input value={name} onChange={(event) => setName(event.target.value)} />
+          </Field>
+          <Field label="Email" testId="removal-form-email-input">
+            <Input type="email" value={email} onChange={(event) => setEmail(event.target.value)} />
+          </Field>
+          <Field label="Reason" testId="removal-form-reason-input">
+            <Textarea
+              rows={4}
+              value={reason}
+              onChange={(event) => setReason(event.target.value)}
+              placeholder="Let us know why you would like the photo removed."
+            />
+          </Field>
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={submitting}>
+              Cancel
+            </Button>
+            <Button
+              onClick={submit}
+              disabled={submitting}
+              data-testid="removal-form-submit-button"
+            >
+              {submitting ? "Sending..." : "Send request"}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function EventsPage({ events, loading, onOpenRequest }) {
   const [filter, setFilter] = useState("week");
   const filtered = getEventFilter(events || [], filter);
@@ -1210,7 +1451,12 @@ function EventsPage({ events, loading, onOpenRequest }) {
 
   return (
     <div className="space-y-6" data-testid="events-page">
-      <SectionHeading eyebrow="Bookings" title="Event calendar" description="Use quick filters to scan what is happening this week, this month, or across the full line-up." />
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <SectionHeading eyebrow="Bookings" title="Event calendar" description="Use quick filters to scan what is happening this week, this month, or across the full line-up." />
+        <Button asChild variant="outline" size="sm" className="border-primary/25 bg-card/70 text-white hover:bg-primary hover:text-primary-foreground" data-testid="events-posters-link">
+          <a href={POSTERS_FOLDER_URL} target="_blank" rel="noopener noreferrer">Download event posters</a>
+        </Button>
+      </div>
       <Tabs value={filter} onValueChange={setFilter}>
         <TabsList className="grid h-auto grid-cols-3 gap-2 bg-transparent p-0">
           <TabsTrigger value="week" className="border border-white/10 bg-card py-3 text-white data-[state=active]:border-primary/35 data-[state=active]:bg-primary/10 data-[state=active]:text-primary">This week</TabsTrigger>
@@ -2471,6 +2717,688 @@ function AdminSpecialsPage({ token, specials, refresh }) {
               </Select>
             </Field>
             <Button className="w-full" onClick={saveSpecial} data-testid="save-special-button">Save special</Button>
+          </div>
+        </SheetContent>
+      </Sheet>
+    </div>
+  );
+}
+
+function AdminMenuPage({ token, categories, refresh }) {
+  const safeCategories = Array.isArray(categories) ? categories : [];
+  const [selectedCategoryId, setSelectedCategoryId] = useState(null);
+  const [categorySheetOpen, setCategorySheetOpen] = useState(false);
+  const [editingCategory, setEditingCategory] = useState(null);
+  const [categoryForm, setCategoryForm] = useState({ name: "", slug: "", description: "" });
+  const [itemSheetOpen, setItemSheetOpen] = useState(false);
+  const [editingItem, setEditingItem] = useState(null);
+  const initialItemForm = {
+    name: "",
+    description: "",
+    price: 0,
+    price_label: "R0.00",
+    subcategory: "",
+    featured: false,
+    tags: "",
+    image_url: "",
+    auto_label: true,
+  };
+  const [itemForm, setItemForm] = useState(initialItemForm);
+  const [query, setQuery] = useState("");
+
+  useEffect(() => {
+    const list = Array.isArray(categories) ? categories : [];
+    if (list.length === 0) {
+      setSelectedCategoryId(null);
+      return;
+    }
+    setSelectedCategoryId((current) =>
+      list.some((category) => category.id === current) ? current : list[0].id,
+    );
+  }, [categories]);
+
+  const selectedCategory = safeCategories.find((category) => category.id === selectedCategoryId) || null;
+  const filteredItems = (selectedCategory?.items || []).filter((item) =>
+    item.name.toLowerCase().includes(query.toLowerCase()),
+  );
+
+  const openCreateCategory = () => {
+    setEditingCategory(null);
+    setCategoryForm({ name: "", slug: "", description: "" });
+    setCategorySheetOpen(true);
+  };
+
+  const openEditCategory = (category) => {
+    setEditingCategory(category);
+    setCategoryForm({
+      name: category.name || "",
+      slug: category.slug || "",
+      description: category.description || "",
+    });
+    setCategorySheetOpen(true);
+  };
+
+  const saveCategory = async () => {
+    const payload = {
+      name: categoryForm.name.trim(),
+      slug: categoryForm.slug.trim(),
+      description: categoryForm.description,
+    };
+    if (!payload.name || !payload.slug) {
+      toast.error("Category name and slug are required.");
+      return;
+    }
+    try {
+      if (editingCategory) {
+        await api.put(`/admin/menu/categories/${editingCategory.id}`, payload, authConfig(token));
+        toast.success("Category updated.");
+      } else {
+        await api.post("/admin/menu/categories", payload, authConfig(token));
+        toast.success("Category created.");
+      }
+      setCategorySheetOpen(false);
+      refresh(token);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Could not save the category.");
+    }
+  };
+
+  const deleteCategory = async (categoryId) => {
+    if (!window.confirm("Delete this category? This will remove all of its items.")) {
+      return;
+    }
+    try {
+      await api.delete(`/admin/menu/categories/${categoryId}`, authConfig(token));
+      toast.success("Category deleted.");
+      refresh(token);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Could not delete the category.");
+    }
+  };
+
+  const openCreateItem = () => {
+    if (!selectedCategory) {
+      toast.error("Pick a category first.");
+      return;
+    }
+    setEditingItem(null);
+    setItemForm(initialItemForm);
+    setItemSheetOpen(true);
+  };
+
+  const openEditItem = (item) => {
+    const expectedAutoLabel = `R${Number(item.price || 0).toFixed(2)}`;
+    setEditingItem(item);
+    setItemForm({
+      name: item.name || "",
+      description: item.description || "",
+      price: Number(item.price || 0),
+      price_label: item.price_label || expectedAutoLabel,
+      subcategory: item.subcategory || "",
+      featured: Boolean(item.featured),
+      tags: (item.tags || []).join(", "),
+      image_url: item.image_url || "",
+      auto_label: (item.price_label || expectedAutoLabel) === expectedAutoLabel,
+    });
+    setItemSheetOpen(true);
+  };
+
+  const updateItemForm = (patch) => {
+    setItemForm((current) => {
+      const next = { ...current, ...patch };
+      if (next.auto_label) {
+        next.price_label = `R${Number(next.price || 0).toFixed(2)}`;
+      }
+      return next;
+    });
+  };
+
+  const saveItem = async () => {
+    if (!selectedCategory) return;
+    if (!itemForm.name.trim()) {
+      toast.error("Item name is required.");
+      return;
+    }
+    const payload = {
+      name: itemForm.name.trim(),
+      description: itemForm.description,
+      price: Number(itemForm.price) || 0,
+      price_label: itemForm.auto_label
+        ? `R${(Number(itemForm.price) || 0).toFixed(2)}`
+        : itemForm.price_label,
+      category: selectedCategory.slug,
+      subcategory: itemForm.subcategory,
+      featured: Boolean(itemForm.featured),
+      tags: itemForm.tags.split(",").map((value) => value.trim()).filter(Boolean),
+      image_url: itemForm.image_url,
+    };
+    try {
+      if (editingItem) {
+        await api.put(`/admin/menu/items/${editingItem.id}`, payload, authConfig(token));
+        toast.success("Menu item updated.");
+      } else {
+        await api.post(
+          `/admin/menu/categories/${selectedCategory.id}/items`,
+          payload,
+          authConfig(token),
+        );
+        toast.success("Menu item created.");
+      }
+      setItemSheetOpen(false);
+      refresh(token);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Could not save the menu item.");
+    }
+  };
+
+  const deleteItem = async (itemId) => {
+    if (!window.confirm("Delete this menu item?")) {
+      return;
+    }
+    try {
+      await api.delete(`/admin/menu/items/${itemId}`, authConfig(token));
+      toast.success("Menu item deleted.");
+      refresh(token);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Could not delete the menu item.");
+    }
+  };
+
+  return (
+    <div className="space-y-6" data-testid="admin-menu-page">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <SectionHeading
+          eyebrow="Content"
+          title="Menu management"
+          description="Curate categories, items, prices, and tags for the digital menu."
+        />
+        <Button onClick={openCreateCategory} data-testid="create-category-button">
+          <Plus className="mr-2 h-4 w-4" />Category
+        </Button>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-[280px,1fr]">
+        <Card className="border-white/10 bg-card">
+          <CardHeader>
+            <CardTitle className="text-lg text-white">Categories</CardTitle>
+            <CardDescription>{safeCategories.length} total</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2 p-3">
+            {safeCategories.length === 0 ? (
+              <p className="px-3 py-6 text-center text-sm text-muted-foreground">
+                No categories yet. Create one to get started.
+              </p>
+            ) : (
+              safeCategories.map((category) => {
+                const isActive = category.id === selectedCategoryId;
+                return (
+                  <div
+                    key={category.id}
+                    className={`flex items-center gap-2 rounded-2xl border px-3 py-2 transition-colors ${
+                      isActive
+                        ? "border-primary/35 bg-primary/10"
+                        : "border-white/5 bg-black/20 hover:border-white/15"
+                    }`}
+                    data-testid={`menu-category-row-${category.id}`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setSelectedCategoryId(category.id)}
+                      className="flex flex-1 items-center justify-between gap-2 text-left"
+                    >
+                      <div>
+                        <p className="font-medium text-white">{category.name}</p>
+                        <p className="text-xs text-muted-foreground">{category.slug}</p>
+                      </div>
+                      <Badge className="border-primary/20 bg-primary/10 text-primary">
+                        {(category.items || []).length}
+                      </Badge>
+                    </button>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => openEditCategory(category)}
+                      data-testid={`edit-category-button-${category.id}`}
+                    >
+                      <BookOpen className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => deleteCategory(category.id)}
+                      data-testid={`delete-category-button-${category.id}`}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                );
+              })
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="border-white/10 bg-card">
+          <CardHeader>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <CardTitle className="text-lg text-white">
+                  {selectedCategory ? selectedCategory.name : "Pick a category"}
+                </CardTitle>
+                <CardDescription>
+                  {selectedCategory
+                    ? selectedCategory.description || "Manage the items in this category."
+                    : "Select a category from the left to manage its items."}
+                </CardDescription>
+              </div>
+              {selectedCategory ? (
+                <Button onClick={openCreateItem} data-testid="create-menu-item-button">
+                  <Plus className="mr-2 h-4 w-4" />Item
+                </Button>
+              ) : null}
+            </div>
+            {selectedCategory ? (
+              <div className="relative mt-4">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  className="pl-10"
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="Search items"
+                  data-testid="menu-items-search-input"
+                />
+              </div>
+            ) : null}
+          </CardHeader>
+          <CardContent className="p-0">
+            {selectedCategory ? (
+              <ScrollArea className="w-full">
+                <Table data-testid="admin-menu-items-table">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Price</TableHead>
+                      <TableHead>Subcategory</TableHead>
+                      <TableHead>Tags</TableHead>
+                      <TableHead>Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredItems.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={5} className="text-center text-sm text-muted-foreground">
+                          No items match your search.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      filteredItems.map((item) => (
+                        <TableRow key={item.id}>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium text-white">{item.name}</span>
+                              {item.featured ? (
+                                <Badge className="border-primary/20 bg-primary/10 text-primary">
+                                  Featured
+                                </Badge>
+                              ) : null}
+                            </div>
+                          </TableCell>
+                          <TableCell>{item.price_label || formatCurrency(item.price)}</TableCell>
+                          <TableCell>{item.subcategory || "—"}</TableCell>
+                          <TableCell>
+                            <div className="flex flex-wrap gap-1">
+                              {(item.tags || []).map((tag) => (
+                                <Badge
+                                  key={tag}
+                                  variant="outline"
+                                  className="border-white/10 bg-transparent text-muted-foreground"
+                                >
+                                  {tag}
+                                </Badge>
+                              ))}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex gap-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => openEditItem(item)}
+                                data-testid={`edit-menu-item-button-${item.id}`}
+                              >
+                                Edit
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => deleteItem(item.id)}
+                                data-testid={`delete-menu-item-button-${item.id}`}
+                              >
+                                Delete
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </ScrollArea>
+            ) : (
+              <div className="p-6">
+                <EmptyState
+                  title="No category selected"
+                  body="Choose a category on the left to view and edit its menu items."
+                />
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      <Sheet open={categorySheetOpen} onOpenChange={setCategorySheetOpen}>
+        <SheetContent side="right" className="w-full overflow-y-auto border-white/10 bg-card sm:max-w-lg">
+          <SheetHeader>
+            <SheetTitle>{editingCategory ? "Edit category" : "Create category"}</SheetTitle>
+            <SheetDescription>
+              Categories appear as tabs on the public menu page.
+            </SheetDescription>
+          </SheetHeader>
+          <div className="mt-6 space-y-4">
+            <Field label="Name" testId="category-form-name-input">
+              <Input
+                value={categoryForm.name}
+                onChange={(event) =>
+                  setCategoryForm((current) => ({ ...current, name: event.target.value }))
+                }
+              />
+            </Field>
+            <Field label="Slug" testId="category-form-slug-input">
+              <Input
+                value={categoryForm.slug}
+                onChange={(event) =>
+                  setCategoryForm((current) => ({ ...current, slug: event.target.value }))
+                }
+                placeholder="food, drinks, vip"
+              />
+            </Field>
+            <Field label="Description" testId="category-form-description-input">
+              <Textarea
+                rows={3}
+                value={categoryForm.description}
+                onChange={(event) =>
+                  setCategoryForm((current) => ({ ...current, description: event.target.value }))
+                }
+              />
+            </Field>
+            <Button className="w-full" onClick={saveCategory} data-testid="save-category-button">
+              Save category
+            </Button>
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      <Sheet open={itemSheetOpen} onOpenChange={setItemSheetOpen}>
+        <SheetContent side="right" className="w-full overflow-y-auto border-white/10 bg-card sm:max-w-xl">
+          <SheetHeader>
+            <SheetTitle>{editingItem ? "Edit menu item" : "Create menu item"}</SheetTitle>
+            <SheetDescription>
+              {selectedCategory ? `Adding to ${selectedCategory.name}.` : "Pick a category first."}
+            </SheetDescription>
+          </SheetHeader>
+          <div className="mt-6 space-y-4">
+            <Field label="Name" testId="item-form-name-input">
+              <Input
+                value={itemForm.name}
+                onChange={(event) => updateItemForm({ name: event.target.value })}
+              />
+            </Field>
+            <Field label="Description" testId="item-form-description-input">
+              <Textarea
+                rows={3}
+                value={itemForm.description}
+                onChange={(event) => updateItemForm({ description: event.target.value })}
+              />
+            </Field>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Price (ZAR)" testId="item-form-price-input">
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={itemForm.price}
+                  onChange={(event) => updateItemForm({ price: Number(event.target.value) })}
+                />
+              </Field>
+              <Field label="Price label" testId="item-form-price-label-input">
+                <Input
+                  value={itemForm.price_label}
+                  disabled={itemForm.auto_label}
+                  onChange={(event) => updateItemForm({ price_label: event.target.value })}
+                />
+              </Field>
+            </div>
+            <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-black/20 px-3 py-2">
+              <Switch
+                checked={itemForm.auto_label}
+                onCheckedChange={(checked) => updateItemForm({ auto_label: checked })}
+                data-testid="item-form-auto-label-switch"
+              />
+              <Label className="text-sm text-white">Auto price label (R&lt;price&gt;.00)</Label>
+            </div>
+            <Field label="Subcategory" testId="item-form-subcategory-input">
+              <Input
+                value={itemForm.subcategory}
+                onChange={(event) => updateItemForm({ subcategory: event.target.value })}
+                placeholder="Starters, Mains, Bottle list..."
+              />
+            </Field>
+            <Field label="Tags (comma separated)" testId="item-form-tags-input">
+              <Input
+                value={itemForm.tags}
+                onChange={(event) => updateItemForm({ tags: event.target.value })}
+                placeholder="signature, share, chef"
+              />
+            </Field>
+            <Field label="Image URL" testId="item-form-image-url-input">
+              <Input
+                value={itemForm.image_url}
+                onChange={(event) => updateItemForm({ image_url: event.target.value })}
+                placeholder="https://..."
+              />
+            </Field>
+            <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-black/20 px-3 py-2">
+              <Switch
+                checked={itemForm.featured}
+                onCheckedChange={(checked) => updateItemForm({ featured: checked })}
+                data-testid="item-form-featured-switch"
+              />
+              <Label className="text-sm text-white">Featured item</Label>
+            </div>
+            <Button className="w-full" onClick={saveItem} data-testid="save-menu-item-button">
+              Save menu item
+            </Button>
+          </div>
+        </SheetContent>
+      </Sheet>
+    </div>
+  );
+}
+
+function AdminGalleryPage({ token, photos, refresh }) {
+  const safePhotos = Array.isArray(photos) ? photos : [];
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [editingPhoto, setEditingPhoto] = useState(null);
+  const initialForm = { url_or_id: "", caption: "", sort_order: 0 };
+  const [form, setForm] = useState(initialForm);
+
+  const openCreate = () => {
+    setEditingPhoto(null);
+    setForm(initialForm);
+    setSheetOpen(true);
+  };
+
+  const openEdit = (photo) => {
+    setEditingPhoto(photo);
+    setForm({
+      url_or_id: photo.drive_file_id || "",
+      caption: photo.caption || "",
+      sort_order: typeof photo.sort_order === "number" ? photo.sort_order : 0,
+    });
+    setSheetOpen(true);
+  };
+
+  const savePhoto = async () => {
+    try {
+      if (editingPhoto) {
+        const payload = {
+          caption: form.caption,
+          sort_order: Number(form.sort_order) || 0,
+        };
+        await api.put(`/admin/gallery/${editingPhoto.id}`, payload, authConfig(token));
+        toast.success("Photo updated.");
+      } else {
+        const fileId = extractDriveFileId(form.url_or_id);
+        if (!fileId) {
+          toast.error("Paste a valid Google Drive URL or file ID.");
+          return;
+        }
+        const payload = {
+          url_or_id: form.url_or_id,
+          caption: form.caption,
+          sort_order: Number(form.sort_order) || 0,
+        };
+        await api.post("/admin/gallery", payload, authConfig(token));
+        toast.success("Photo added.");
+      }
+      setSheetOpen(false);
+      refresh(token);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Could not save the photo.");
+    }
+  };
+
+  const deletePhoto = async (photoId) => {
+    if (!window.confirm("Remove this photo from the gallery?")) {
+      return;
+    }
+    try {
+      await api.delete(`/admin/gallery/${photoId}`, authConfig(token));
+      toast.success("Photo removed.");
+      refresh(token);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Could not delete the photo.");
+    }
+  };
+
+  return (
+    <div className="space-y-6" data-testid="admin-gallery-page">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <SectionHeading
+          eyebrow="Content"
+          title="Gallery management"
+          description="Add, caption, and order public gallery photos powered by Google Drive."
+        />
+        <Button onClick={openCreate} data-testid="create-gallery-photo-button">
+          <Plus className="mr-2 h-4 w-4" />Add photo
+        </Button>
+      </div>
+
+      <Alert className="border-primary/20 bg-card/80">
+        <Image className="h-4 w-4 text-primary" />
+        <AlertTitle>Drive sharing tip</AlertTitle>
+        <AlertDescription>
+          Paste a Google Drive share URL (the file must be set to &quot;Anyone with the link can view&quot;). The thumbnail will appear automatically.
+        </AlertDescription>
+      </Alert>
+
+      {safePhotos.length === 0 ? (
+        <EmptyState
+          title="No gallery photos yet."
+          body="Add your first Drive photo to get the public gallery rolling."
+        />
+      ) : (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {safePhotos.map((photo) => (
+            <Card
+              key={photo.id}
+              className="overflow-hidden border-white/10 bg-card"
+              data-testid={`admin-gallery-card-${photo.id}`}
+            >
+              <img
+                src={driveThumbnailUrl(photo.drive_file_id, "w1600")}
+                alt={photo.caption || "Vaal Vibes gallery photo"}
+                className="aspect-[4/3] w-full object-cover"
+              />
+              <CardContent className="space-y-3 p-4">
+                <p className="text-sm text-white">
+                  {photo.caption || <span className="text-muted-foreground">No caption</span>}
+                </p>
+                <p className="text-xs text-muted-foreground">Sort order: {photo.sort_order ?? 0}</p>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => openEdit(photo)}
+                    data-testid={`edit-gallery-photo-button-${photo.id}`}
+                  >
+                    Edit
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => deletePhoto(photo.id)}
+                    data-testid={`delete-gallery-photo-button-${photo.id}`}
+                  >
+                    Delete
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
+        <SheetContent side="right" className="w-full overflow-y-auto border-white/10 bg-card sm:max-w-lg">
+          <SheetHeader>
+            <SheetTitle>{editingPhoto ? "Edit gallery photo" : "Add gallery photo"}</SheetTitle>
+            <SheetDescription>
+              Photos render via Google Drive thumbnails. Public sharing is required.
+            </SheetDescription>
+          </SheetHeader>
+          <div className="mt-6 space-y-4">
+            {editingPhoto ? null : (
+              <Field label="Drive share URL or file ID" testId="gallery-form-url-input">
+                <Input
+                  value={form.url_or_id}
+                  onChange={(event) =>
+                    setForm((current) => ({ ...current, url_or_id: event.target.value }))
+                  }
+                  placeholder="https://drive.google.com/file/d/FILE_ID/view"
+                />
+              </Field>
+            )}
+            <Field label="Caption" testId="gallery-form-caption-input">
+              <Input
+                value={form.caption}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, caption: event.target.value }))
+                }
+                placeholder="Friday After Dark — main floor"
+              />
+            </Field>
+            <Field label="Sort order" testId="gallery-form-sort-input">
+              <Input
+                type="number"
+                value={form.sort_order}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, sort_order: event.target.value }))
+                }
+              />
+            </Field>
+            <Button className="w-full" onClick={savePhoto} data-testid="save-gallery-photo-button">
+              Save photo
+            </Button>
           </div>
         </SheetContent>
       </Sheet>

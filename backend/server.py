@@ -5,9 +5,11 @@ from typing import List, Literal, Optional
 import hmac
 import logging
 import os
+import re
 import uuid
 
 import jwt
+import resend
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, status
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -28,6 +30,11 @@ JWT_SECRET = os.environ.get("APP_JWT_SECRET", "vaal-vibes-jwt-secret-2026-ultra-
 JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_MINUTES = 60 * 24 * 7
 PROMO_SECRET = os.environ.get("PROMO_SIGNING_SECRET", "vaal-vibes-promo-secret-2026-ultra-secure")
+
+RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
+RESEND_FROM_EMAIL = os.environ.get("RESEND_FROM_EMAIL", "Vaal Vibes <noreply@vaalvibes.co.za>")
+if RESEND_API_KEY:
+    resend.api_key = RESEND_API_KEY
 
 pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
@@ -155,6 +162,60 @@ class SpecialCreateRequest(BaseModel):
     status: Literal["active", "inactive"] = "active"
 
 
+class MenuCategoryCreateRequest(BaseModel):
+    name: str
+    slug: str
+    description: str = ""
+
+
+class MenuItemCreateRequest(BaseModel):
+    name: str
+    description: str = ""
+    price: float
+    price_label: str
+    category: str = ""
+    subcategory: str = ""
+    featured: bool = False
+    tags: List[str] = Field(default_factory=list)
+    image_url: Optional[str] = None
+
+
+DRIVE_ID_RE = re.compile(r"(?:/d/|[?&]id=)([a-zA-Z0-9_-]{20,})")
+
+
+def extract_drive_id(url_or_id: str) -> str:
+    value = (url_or_id or "").strip()
+    if not value:
+        raise HTTPException(status_code=400, detail="Drive URL or file ID is required")
+    match = DRIVE_ID_RE.search(value)
+    if match:
+        return match.group(1)
+    # Treat as bare file ID if it looks like one
+    if re.fullmatch(r"[a-zA-Z0-9_-]{20,}", value):
+        return value
+    raise HTTPException(status_code=400, detail="Could not extract a Google Drive file ID from the input")
+
+
+class GalleryPhoto(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    drive_file_id: str
+    caption: str = ""
+    sort_order: int = 0
+    added_by: str = ""
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class GalleryPhotoCreateRequest(BaseModel):
+    url_or_id: str
+    caption: str = ""
+    sort_order: int = 0
+
+
+class GalleryPhotoUpdateRequest(BaseModel):
+    caption: str = ""
+    sort_order: int = 0
+
+
 class PromoPool(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     name: str
@@ -262,7 +323,7 @@ class Campaign(BaseModel):
     subject: str
     audience: str
     body_html: str
-    status: Literal["draft", "mock-dispatched"] = "draft"
+    status: Literal["draft", "sending", "sent", "partial", "failed", "mock-dispatched"] = "draft"
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -339,6 +400,7 @@ class PublicBootstrapResponse(BaseModel):
     specials: List[SpecialItem]
     venue_hours: List[str]
     service_note: str
+    gallery: List[GalleryPhoto] = Field(default_factory=list)
 
 
 # Helpers
@@ -603,7 +665,8 @@ async def validate_promo_logic(code: str, bill_amount: float) -> PromoValidation
 async def seed_database() -> None:
     now = now_utc()
 
-    # Always refresh events and specials so content updates take effect on restart
+    # Default event/special content for first-run seeding only.
+    # Admin-created events and specials must survive process restarts.
     events = [
         EventItem(
             title="Friday After Dark",
@@ -662,10 +725,10 @@ async def seed_database() -> None:
             status="active",
         ),
     ]
-    await db.events.drop()
-    await db.specials.drop()
-    await db.events.insert_many([event.model_dump() for event in events])
-    await db.specials.insert_many([special.model_dump() for special in specials])
+    if (await db.events.count_documents({})) == 0:
+        await db.events.insert_many([event.model_dump() for event in events])
+    if (await db.specials.count_documents({})) == 0:
+        await db.specials.insert_many([special.model_dump() for special in specials])
 
     # Only seed static data once
     existing = await db.menu_categories.count_documents({})
@@ -837,6 +900,11 @@ async def get_public_bootstrap() -> PublicBootstrapResponse:
     menu = serialize_many(await db.menu_categories.find({}, {"_id": 0}).to_list(length=100))
     events = serialize_many(await db.events.find({"status": {"$ne": "archived"}}, {"_id": 0}).sort("date", 1).to_list(length=20))
     specials = serialize_many(await db.specials.find({"status": "active"}, {"_id": 0}).sort("available_until", 1).to_list(length=20))
+    gallery = serialize_many(
+        await db.gallery_photos.find({}, {"_id": 0})
+        .sort([("sort_order", 1), ("created_at", -1)])
+        .to_list(length=200)
+    )
     return PublicBootstrapResponse(
         venue_name="Vaal Vibes",
         tagline="Nightlife, braai plates, and premium table vibes — all in one mobile-first experience.",
@@ -852,6 +920,7 @@ async def get_public_bootstrap() -> PublicBootstrapResponse:
             "Sun · 12:00 - 21:00",
         ],
         service_note="16 Fraser Street, Vanderbijlpark, Gauteng 1900",
+        gallery=gallery,
     )
 
 
@@ -868,6 +937,15 @@ async def get_events() -> List[EventItem]:
 @api_router.get("/public/specials", response_model=List[SpecialItem])
 async def get_specials() -> List[SpecialItem]:
     return serialize_many(await db.specials.find({}, {"_id": 0}).sort("available_until", 1).to_list(length=100))
+
+
+@api_router.get("/public/gallery", response_model=List[GalleryPhoto])
+async def get_public_gallery() -> List[GalleryPhoto]:
+    return serialize_many(
+        await db.gallery_photos.find({}, {"_id": 0})
+        .sort([("sort_order", 1), ("created_at", -1)])
+        .to_list(length=200)
+    )
 
 
 @api_router.post("/public/birthday-requests", response_model=CustomerRequest)
@@ -1159,6 +1237,149 @@ async def admin_delete_special(special_id: str, current_admin: dict = Depends(ge
     return MessageResponse(message="Special deleted")
 
 
+@api_router.get("/admin/menu/categories", response_model=List[MenuCategory])
+async def admin_list_menu_categories(current_admin: dict = Depends(get_current_admin)) -> List[MenuCategory]:
+    return serialize_many(await db.menu_categories.find({}, {"_id": 0}).sort("name", 1).to_list(length=200))
+
+
+@api_router.post("/admin/menu/categories", response_model=MenuCategory)
+async def admin_create_menu_category(payload: MenuCategoryCreateRequest, current_admin: dict = Depends(get_current_admin)) -> MenuCategory:
+    existing = await db.menu_categories.find_one({"slug": payload.slug}, {"_id": 0})
+    if existing:
+        raise HTTPException(status_code=409, detail="Menu category slug already exists")
+    category = MenuCategory(**payload.model_dump(), items=[])
+    await db.menu_categories.insert_one(category.model_dump())
+    await append_audit_log(current_admin, "create", "menu-category", category.id, f"Created menu category {category.name}")
+    return category
+
+
+@api_router.put("/admin/menu/categories/{category_id}", response_model=MenuCategory)
+async def admin_update_menu_category(category_id: str, payload: MenuCategoryCreateRequest, current_admin: dict = Depends(get_current_admin)) -> MenuCategory:
+    existing = await db.menu_categories.find_one({"id": category_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Menu category not found")
+    await db.menu_categories.update_one(
+        {"id": category_id},
+        {"$set": {"name": payload.name, "slug": payload.slug, "description": payload.description}},
+    )
+    updated = serialize(await db.menu_categories.find_one({"id": category_id}, {"_id": 0}))
+    if not updated:
+        raise HTTPException(status_code=404, detail="Menu category not found")
+    await append_audit_log(current_admin, "update", "menu-category", category_id, f"Updated menu category {updated['name']}")
+    return updated
+
+
+@api_router.delete("/admin/menu/categories/{category_id}", response_model=MessageResponse)
+async def admin_delete_menu_category(category_id: str, current_admin: dict = Depends(get_current_admin)) -> MessageResponse:
+    category = serialize(await db.menu_categories.find_one({"id": category_id}, {"_id": 0}))
+    if not category:
+        raise HTTPException(status_code=404, detail="Menu category not found")
+    await db.menu_categories.delete_one({"id": category_id})
+    await append_audit_log(current_admin, "delete", "menu-category", category_id, f"Deleted menu category {category['name']}")
+    return MessageResponse(message="Menu category deleted")
+
+
+@api_router.post("/admin/menu/categories/{category_id}/items", response_model=MenuItem)
+async def admin_create_menu_item(category_id: str, payload: MenuItemCreateRequest, current_admin: dict = Depends(get_current_admin)) -> MenuItem:
+    category = await db.menu_categories.find_one({"id": category_id}, {"_id": 0})
+    if not category:
+        raise HTTPException(status_code=404, detail="Menu category not found")
+    data = payload.model_dump()
+    if not data.get("category"):
+        data["category"] = category["name"]
+    item = MenuItem(**data)
+    await db.menu_categories.update_one(
+        {"id": category_id},
+        {"$push": {"items": item.model_dump()}},
+    )
+    await append_audit_log(current_admin, "create", "menu-item", item.id, f"Created menu item {item.name}")
+    return item
+
+
+@api_router.put("/admin/menu/items/{item_id}", response_model=MenuItem)
+async def admin_update_menu_item(item_id: str, payload: MenuItemCreateRequest, current_admin: dict = Depends(get_current_admin)) -> MenuItem:
+    existing = await db.menu_categories.find_one({"items.id": item_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Menu item not found")
+    update_fields = {f"items.$.{key}": value for key, value in payload.model_dump().items()}
+    await db.menu_categories.update_one(
+        {"items.id": item_id},
+        {"$set": update_fields},
+    )
+    refreshed = await db.menu_categories.find_one({"items.id": item_id}, {"_id": 0})
+    if not refreshed:
+        raise HTTPException(status_code=404, detail="Menu item not found")
+    updated_item = next((it for it in refreshed.get("items", []) if it.get("id") == item_id), None)
+    if not updated_item:
+        raise HTTPException(status_code=404, detail="Menu item not found")
+    await append_audit_log(current_admin, "update", "menu-item", item_id, f"Updated menu item {updated_item['name']}")
+    return updated_item
+
+
+@api_router.delete("/admin/menu/items/{item_id}", response_model=MessageResponse)
+async def admin_delete_menu_item(item_id: str, current_admin: dict = Depends(get_current_admin)) -> MessageResponse:
+    existing = await db.menu_categories.find_one({"items.id": item_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Menu item not found")
+    item = next((it for it in existing.get("items", []) if it.get("id") == item_id), None)
+    item_name = item["name"] if item else item_id
+    await db.menu_categories.update_one(
+        {"items.id": item_id},
+        {"$pull": {"items": {"id": item_id}}},
+    )
+    await append_audit_log(current_admin, "delete", "menu-item", item_id, f"Deleted menu item {item_name}")
+    return MessageResponse(message="Menu item deleted")
+
+
+@api_router.get("/admin/gallery", response_model=List[GalleryPhoto])
+async def admin_list_gallery(current_admin: dict = Depends(get_current_admin)) -> List[GalleryPhoto]:
+    return serialize_many(
+        await db.gallery_photos.find({}, {"_id": 0})
+        .sort([("sort_order", 1), ("created_at", -1)])
+        .to_list(length=500)
+    )
+
+
+@api_router.post("/admin/gallery", response_model=GalleryPhoto)
+async def admin_create_gallery_photo(payload: GalleryPhotoCreateRequest, current_admin: dict = Depends(get_current_admin)) -> GalleryPhoto:
+    drive_file_id = extract_drive_id(payload.url_or_id)
+    photo = GalleryPhoto(
+        drive_file_id=drive_file_id,
+        caption=payload.caption,
+        sort_order=payload.sort_order,
+        added_by=current_admin["id"],
+    )
+    await db.gallery_photos.insert_one(photo.model_dump())
+    await append_audit_log(current_admin, "create", "gallery-photo", photo.id, f"Added gallery photo {photo.drive_file_id}")
+    return photo
+
+
+@api_router.put("/admin/gallery/{photo_id}", response_model=GalleryPhoto)
+async def admin_update_gallery_photo(photo_id: str, payload: GalleryPhotoUpdateRequest, current_admin: dict = Depends(get_current_admin)) -> GalleryPhoto:
+    existing = await db.gallery_photos.find_one({"id": photo_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Gallery photo not found")
+    await db.gallery_photos.update_one(
+        {"id": photo_id},
+        {"$set": {"caption": payload.caption, "sort_order": payload.sort_order}},
+    )
+    updated = serialize(await db.gallery_photos.find_one({"id": photo_id}, {"_id": 0}))
+    if not updated:
+        raise HTTPException(status_code=404, detail="Gallery photo not found")
+    await append_audit_log(current_admin, "update", "gallery-photo", photo_id, f"Updated gallery photo {updated['drive_file_id']}")
+    return updated
+
+
+@api_router.delete("/admin/gallery/{photo_id}", response_model=MessageResponse)
+async def admin_delete_gallery_photo(photo_id: str, current_admin: dict = Depends(get_current_admin)) -> MessageResponse:
+    photo = serialize(await db.gallery_photos.find_one({"id": photo_id}, {"_id": 0}))
+    if not photo:
+        raise HTTPException(status_code=404, detail="Gallery photo not found")
+    await db.gallery_photos.delete_one({"id": photo_id})
+    await append_audit_log(current_admin, "delete", "gallery-photo", photo_id, f"Deleted gallery photo {photo['drive_file_id']}")
+    return MessageResponse(message="Gallery photo deleted")
+
+
 @api_router.get("/admin/campaigns", response_model=List[Campaign])
 async def admin_list_campaigns(current_admin: dict = Depends(get_current_admin)) -> List[Campaign]:
     return serialize_many(await db.campaigns.find({}, {"_id": 0}).sort("created_at", -1).to_list(length=100))
@@ -1174,12 +1395,69 @@ async def admin_create_campaign(payload: CampaignCreateRequest, current_admin: d
 
 @api_router.post("/admin/campaigns/{campaign_id}/dispatch", response_model=MessageResponse)
 async def admin_dispatch_campaign(campaign_id: str, current_admin: dict = Depends(get_current_admin)) -> MessageResponse:
+    dispatch_logger = logging.getLogger(__name__)
     campaign = serialize(await db.campaigns.find_one({"id": campaign_id}, {"_id": 0}))
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
-    await db.campaigns.update_one({"id": campaign_id}, {"$set": {"status": "mock-dispatched"}})
-    await append_audit_log(current_admin, "dispatch", "campaign", campaign_id, f"MOCKED dispatch for campaign {campaign['subject']}")
-    return MessageResponse(message="Campaign dispatch is MOCKED for MVP")
+
+    recipients = await db.customers.find(
+        {"preferences.marketing_opt_in": True},
+        {"_id": 0, "email": 1, "name": 1, "id": 1},
+    ).to_list(length=10000)
+    recipient_count = len(recipients)
+
+    if not RESEND_API_KEY:
+        await db.campaigns.update_one({"id": campaign_id}, {"$set": {"status": "mock-dispatched"}})
+        await append_audit_log(
+            current_admin,
+            "dispatch",
+            "campaign",
+            campaign_id,
+            f"Mock dispatch (RESEND_API_KEY not configured) — would have sent to {recipient_count} recipients",
+        )
+        return MessageResponse(
+            message=f"RESEND_API_KEY not configured — campaign marked as mock-dispatched ({recipient_count} recipients)."
+        )
+
+    await db.campaigns.update_one({"id": campaign_id}, {"$set": {"status": "sending"}})
+
+    sent_count = 0
+    failed_count = 0
+    for recipient in recipients:
+        email = recipient.get("email")
+        if not email:
+            failed_count += 1
+            continue
+        try:
+            resend.Emails.send(
+                {
+                    "from": RESEND_FROM_EMAIL,
+                    "to": [email],
+                    "subject": campaign["subject"],
+                    "html": campaign["body_html"],
+                }
+            )
+            sent_count += 1
+        except Exception as exc:  # noqa: BLE001 — third-party SDK raises a variety of errors
+            failed_count += 1
+            dispatch_logger.warning("Resend send failed for %s: %s", email, exc)
+
+    if sent_count > 0 and failed_count == 0:
+        final_status = "sent"
+    elif sent_count > 0 and failed_count > 0:
+        final_status = "partial"
+    else:
+        final_status = "failed"
+
+    await db.campaigns.update_one({"id": campaign_id}, {"$set": {"status": final_status}})
+    await append_audit_log(
+        current_admin,
+        "dispatch",
+        "campaign",
+        campaign_id,
+        f"Dispatched campaign '{campaign['subject']}' — {sent_count} sent, {failed_count} failed",
+    )
+    return MessageResponse(message=f"Campaign dispatched: {sent_count} sent, {failed_count} failed.")
 
 
 @api_router.get("/admin/promo-pools", response_model=List[PromoPool])
