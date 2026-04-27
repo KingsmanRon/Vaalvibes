@@ -778,7 +778,10 @@ function CustomerFrame({ children, customerUser, theme, setTheme, logoutCustomer
 function CustomerBottomNav() {
   return (
     <nav className="fixed inset-x-0 bottom-0 z-[140] border-t border-white/10 bg-[#111111]/92 backdrop-blur-xl pb-[env(safe-area-inset-bottom)]" data-testid="customer-bottom-nav">
-      <div className="mx-auto grid max-w-[560px] grid-cols-6 gap-1 px-2 py-2">
+      <div
+        className="mx-auto grid max-w-[560px] gap-1 px-2 py-2"
+        style={{ gridTemplateColumns: `repeat(${customerLinks.length}, minmax(0, 1fr))` }}
+      >
         {customerLinks.map((item) => {
           const Icon = item.icon;
           return (
