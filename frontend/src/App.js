@@ -1024,7 +1024,9 @@ function HomePage({ bootstrap, loading, error, onOpenRequest, onOpenSpecial }) {
           {bootstrap.events.map((event) => (
             <Card key={event.id} className="overflow-hidden border-white/10 bg-card transition-colors hover:border-primary/35" data-testid="event-card">
               <div className="grid gap-4 md:grid-cols-[200px_1fr]">
-                <img src={getEventFeatureImage(event)} alt={event.title} className="h-full min-h-[220px] w-full vv-image-cover" />
+                <div className="flex items-center justify-center bg-black/40">
+                  <img src={getEventFeatureImage(event)} alt={event.title} className="h-auto max-h-[520px] w-full object-contain" />
+                </div>
                 <CardContent className="flex flex-col gap-4 p-5">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
@@ -1462,7 +1464,9 @@ function EventsPage({ events, loading, onOpenRequest }) {
         {filtered.map((event) => (
           <Card key={event.id} className="overflow-hidden border-white/10 bg-card" data-testid={`events-list-card-${event.id}`}>
             <div className="grid gap-4 md:grid-cols-[220px_120px_1fr_auto]">
-              <img src={getEventFeatureImage(event)} alt={event.title} className="h-full min-h-[220px] w-full vv-image-cover" />
+              <div className="flex items-center justify-center bg-black/40">
+                <img src={getEventFeatureImage(event)} alt={event.title} className="h-auto max-h-[520px] w-full object-contain" />
+              </div>
               <CardContent className="flex items-center justify-center p-5 md:p-4">
                 <div className="w-full rounded-2xl border border-primary/20 bg-primary/10 p-4 text-center">
                   <p className="text-xs uppercase tracking-[0.28em] text-primary">Date</p>
