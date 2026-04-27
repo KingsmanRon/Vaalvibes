@@ -896,13 +896,13 @@ function HeroActions({ onOpenRequest }) {
 
 function SectionHeading({ eyebrow, title, description, action }) {
   return (
-    <div className="mb-5 flex items-end justify-between gap-4">
-      <div>
+    <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+      <div className="min-w-0 flex-1">
         {eyebrow ? <p className="mb-2 text-xs uppercase tracking-[0.28em] text-primary">{eyebrow}</p> : null}
         <h2 className="font-display text-3xl leading-none text-white sm:text-4xl">{title}</h2>
         {description ? <p className="mt-2 max-w-2xl text-sm text-muted-foreground">{description}</p> : null}
       </div>
-      {action}
+      {action ? <div className="shrink-0">{action}</div> : null}
     </div>
   );
 }
@@ -1200,8 +1200,8 @@ function MenuPage({ bootstrap, loading, onAddToRequest }) {
                           <div className="space-y-3">
                             {items.map((item) => (
                               <div key={item.id} className="rounded-2xl border border-white/5 bg-card/60 p-4" data-testid={`menu-item-${item.id}`}>
-                                <div className="flex items-start justify-between gap-4">
-                                  <div>
+                                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+                                  <div className="min-w-0 flex-1">
                                     <div className="flex flex-wrap items-center gap-2">
                                       <p className="font-medium text-white">{item.name}</p>
                                       {item.featured ? <Badge className="border-primary/20 bg-primary/10 text-primary">Featured</Badge> : null}
@@ -1213,9 +1213,9 @@ function MenuPage({ bootstrap, loading, onAddToRequest }) {
                                       ))}
                                     </div>
                                   </div>
-                                  <div className="text-right">
+                                  <div className="flex items-center justify-between gap-3 sm:flex-col sm:items-end sm:justify-start sm:text-right">
                                     <p className="text-lg font-semibold text-white">{item.price_label}</p>
-                                    <Button size="sm" className="mt-3" onClick={() => onAddToRequest(item)} data-testid={`menu-item-request-button-${item.id}`}>
+                                    <Button size="sm" className="sm:mt-3" onClick={() => onAddToRequest(item)} data-testid={`menu-item-request-button-${item.id}`}>
                                       Request order
                                     </Button>
                                   </div>
