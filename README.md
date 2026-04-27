@@ -230,8 +230,8 @@ Until those steps are done, the dispatch endpoint will continue to run in mock-o
 
 ## Operating notes / gotchas
 
-- **Seeding is idempotent for built-ins.** Events, specials, the menu, the welcome promo pool, and admin users are seeded once when their collections are empty. Admin-created content survives restarts (Phase 0 fix).
-- **Menu is data-driven.** `/admin/menu` is the canonical place to add or reprice items. Code changes are not required for new prices, items, or categories.
+- **Seed is structural bootstrap only.** `seed_database()` runs once against an empty DB and inserts only what the app needs to *function*: admin logins, the welcome promo pool, and the canonical menu. Operational content — events, specials, campaigns — is **not seeded**; it lives entirely in MongoDB and is managed via `/admin/*` routes. A redeploy never overwrites or re-creates these.
+- **Menu is data-driven.** `/admin/menu` is the canonical place to add or reprice items. Code changes are not required for new prices, items, or categories. To bulk-restore the canonical menu, use `/admin/menu` → "Reset to default prices" (calls `POST /admin/menu/sync-defaults`, which re-inserts the contents of `default_menu_categories()` in `backend/server.py`).
 - **Gallery photos use Google Drive file IDs.** The Drive folder pointed at by `REACT_APP_POSTERS_FOLDER_URL` must be set to "Anyone with the link can view" so the SPA can hot-link the images.
 - **Campaign dispatch falls back to mock mode** when `RESEND_API_KEY` is unset. Real email only sends once the key is configured and the domain is verified.
 - **JWTs are 7-day tokens.** Customers and admins will be logged out roughly weekly; rotate `APP_JWT_SECRET` to force-revoke all sessions.
