@@ -3230,6 +3230,47 @@ function AdminGalleryPage({ token, photos, refresh }) {
   const [editingPhoto, setEditingPhoto] = useState(null);
   const initialForm = { url_or_id: "", caption: "", sort_order: 0 };
   const [form, setForm] = useState(initialForm);
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkText, setBulkText] = useState("");
+  const [bulkResult, setBulkResult] = useState(null);
+  const [bulkSubmitting, setBulkSubmitting] = useState(false);
+
+  const openBulk = () => {
+    setBulkText("");
+    setBulkResult(null);
+    setBulkOpen(true);
+  };
+
+  const submitBulk = async () => {
+    if (!bulkText.trim()) {
+      toast.error("Paste at least one Drive URL.");
+      return;
+    }
+    setBulkSubmitting(true);
+    setBulkResult(null);
+    try {
+      const response = await api.post(
+        "/admin/gallery/bulk",
+        { text: bulkText },
+        authConfig(token),
+      );
+      setBulkResult(response.data);
+      const { added, skipped_duplicates: skipped, failed } = response.data;
+      if (added > 0) {
+        toast.success(`Added ${added} photo${added === 1 ? "" : "s"}.`);
+      }
+      if (failed > 0) {
+        toast.error(`${failed} URL${failed === 1 ? "" : "s"} could not be parsed.`);
+      } else if (added === 0 && skipped > 0) {
+        toast.info(`All ${skipped} URLs were already in the gallery.`);
+      }
+      refresh(token);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Bulk import failed.");
+    } finally {
+      setBulkSubmitting(false);
+    }
+  };
 
   const openCreate = () => {
     setEditingPhoto(null);
@@ -3298,16 +3339,21 @@ function AdminGalleryPage({ token, photos, refresh }) {
           title="Gallery management"
           description="Add, caption, and order public gallery photos powered by Google Drive."
         />
-        <Button onClick={openCreate} data-testid="create-gallery-photo-button">
-          <Plus className="mr-2 h-4 w-4" />Add photo
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" onClick={openBulk} data-testid="bulk-gallery-button">
+            <Plus className="mr-2 h-4 w-4" />Bulk paste
+          </Button>
+          <Button onClick={openCreate} data-testid="create-gallery-photo-button">
+            <Plus className="mr-2 h-4 w-4" />Add photo
+          </Button>
+        </div>
       </div>
 
       <Alert className="border-primary/20 bg-card/80">
         <Image className="h-4 w-4 text-primary" />
         <AlertTitle>Drive sharing tip</AlertTitle>
         <AlertDescription>
-          Paste a Google Drive share URL (the file must be set to &quot;Anyone with the link can view&quot;). The thumbnail will appear automatically.
+          Paste a Google Drive share URL (the file must be set to &quot;Anyone with the link can view&quot;). The thumbnail will appear automatically. Use <strong>Bulk paste</strong> for many photos at once — it accepts a list separated by commas or newlines (Drive&apos;s multi-select share output works directly).
         </AlertDescription>
       </Alert>
 
@@ -3357,6 +3403,60 @@ function AdminGalleryPage({ token, photos, refresh }) {
           ))}
         </div>
       )}
+
+      <Sheet open={bulkOpen} onOpenChange={setBulkOpen}>
+        <SheetContent side="right" className="w-full overflow-y-auto border-white/10 bg-card sm:max-w-xl">
+          <SheetHeader>
+            <SheetTitle>Bulk paste Drive URLs</SheetTitle>
+            <SheetDescription>
+              Paste multiple Google Drive share URLs (or file IDs) separated by commas, newlines, or both. Duplicates already in the gallery are skipped automatically.
+            </SheetDescription>
+          </SheetHeader>
+          <div className="mt-6 space-y-4">
+            <Field label="Drive URLs" testId="bulk-gallery-textarea">
+              <Textarea
+                rows={10}
+                value={bulkText}
+                onChange={(event) => setBulkText(event.target.value)}
+                placeholder="https://drive.google.com/file/d/FILE_ID_A/view, https://drive.google.com/file/d/FILE_ID_B/view, ..."
+                className="font-mono text-xs"
+              />
+            </Field>
+            <Button
+              className="w-full"
+              onClick={submitBulk}
+              disabled={bulkSubmitting}
+              data-testid="submit-bulk-gallery-button"
+            >
+              {bulkSubmitting ? "Importing..." : "Import photos"}
+            </Button>
+            {bulkResult && (
+              <Card className="border-white/10 bg-background/40">
+                <CardContent className="space-y-2 p-4 text-sm">
+                  <p>
+                    <span className="text-primary font-semibold">{bulkResult.added}</span> added,{" "}
+                    <span className="text-muted-foreground">{bulkResult.skipped_duplicates}</span> skipped (duplicates),{" "}
+                    <span className={bulkResult.failed > 0 ? "text-destructive" : "text-muted-foreground"}>
+                      {bulkResult.failed}
+                    </span>{" "}
+                    failed.
+                  </p>
+                  {bulkResult.errors?.length > 0 && (
+                    <div className="space-y-1">
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Errors</p>
+                      <ul className="list-disc space-y-1 pl-5 text-xs text-destructive">
+                        {bulkResult.errors.map((err, idx) => (
+                          <li key={idx}>{err}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        </SheetContent>
+      </Sheet>
 
       <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
         <SheetContent side="right" className="w-full overflow-y-auto border-white/10 bg-card sm:max-w-lg">
