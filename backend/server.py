@@ -973,7 +973,7 @@ async def get_public_bootstrap() -> PublicBootstrapResponse:
             "Mon · Closed",
             "Tue - Thu · 12:00 - 00:00",
             "Fri & Sat · 12:00 - 02:00",
-            "Sun · 12:00 - 12:00",
+            "Sun · 12:00 - 00:00",
         ],
         service_note="16 Fraser Street, Vanderbijlpark, Gauteng 1900",
         gallery=gallery,
