@@ -2762,6 +2762,26 @@ function AdminMenuPage({ token, categories, refresh }) {
   };
   const [itemForm, setItemForm] = useState(initialItemForm);
   const [query, setQuery] = useState("");
+  const [resetDialogOpen, setResetDialogOpen] = useState(false);
+  const [resetSubmitting, setResetSubmitting] = useState(false);
+
+  const resetMenuToDefaults = async () => {
+    setResetSubmitting(true);
+    try {
+      const response = await api.post("/admin/menu/sync-defaults", {}, authConfig(token));
+      const { categories: cats, items, previous_categories: prevCats, previous_items: prevItems } =
+        response.data;
+      toast.success(
+        `Menu reset to defaults — ${cats} categories, ${items} items (was ${prevCats}, ${prevItems}).`,
+      );
+      setResetDialogOpen(false);
+      refresh(token);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Could not reset menu to defaults.");
+    } finally {
+      setResetSubmitting(false);
+    }
+  };
 
   useEffect(() => {
     const list = Array.isArray(categories) ? categories : [];
@@ -2929,10 +2949,43 @@ function AdminMenuPage({ token, categories, refresh }) {
           title="Menu management"
           description="Curate categories, items, prices, and tags for the digital menu."
         />
-        <Button onClick={openCreateCategory} data-testid="create-category-button">
-          <Plus className="mr-2 h-4 w-4" />Category
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            onClick={() => setResetDialogOpen(true)}
+            data-testid="reset-menu-button"
+          >
+            Reset to default prices
+          </Button>
+          <Button onClick={openCreateCategory} data-testid="create-category-button">
+            <Plus className="mr-2 h-4 w-4" />Category
+          </Button>
+        </div>
       </div>
+
+      <AlertDialog open={resetDialogOpen} onOpenChange={setResetDialogOpen}>
+        <AlertDialogContent className="border-white/10 bg-card">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Reset menu to default prices?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This drops every category and item, then re-inserts the canonical
+              menu defined in the backend (15 categories, ~50 items). Any custom
+              categories or items added via this page will be lost. The change
+              is immediate on the public site.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={resetSubmitting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={resetMenuToDefaults}
+              disabled={resetSubmitting}
+              data-testid="confirm-reset-menu-button"
+            >
+              {resetSubmitting ? "Resetting..." : "Yes, reset"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <div className="grid gap-4 lg:grid-cols-[280px,1fr]">
         <Card className="border-white/10 bg-card">
