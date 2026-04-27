@@ -10,3 +10,4 @@ passlib>=1.7.4
 tzdata>=2024.2
 motor==3.3.1
 python-multipart>=0.0.9
+resend>=2.0.0
