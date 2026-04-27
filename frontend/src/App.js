@@ -29,7 +29,6 @@ import {
   UserRound,
   Users,
   UtensilsCrossed,
-  Wallet,
   WifiOff,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -138,7 +137,6 @@ const customerLinks = [
   { to: "/menu", label: "Menu", icon: UtensilsCrossed },
   { to: "/events", label: "Events", icon: CalendarDays },
   { to: "/gallery", label: "Gallery", icon: Image },
-  { to: "/wallet", label: "Wallet", icon: Wallet },
   { to: "/profile", label: "Profile", icon: UserRound },
 ];
 
@@ -662,16 +660,7 @@ function AppShell() {
             element={<GalleryPage photos={bootstrap.gallery || []} loading={bootstrapLoading} />}
           />
           <Route path="/birthdays" element={<BirthdayPage />} />
-          <Route
-            path="/wallet"
-            element={
-              customerToken ? (
-                <WalletPage wallet={wallet} loading={customerLoading} requests={customerRequests} />
-              ) : (
-                <Navigate to="/login" replace />
-              )
-            }
-          />
+          <Route path="/wallet" element={<Navigate to="/profile?tab=wallet" replace />} />
           <Route
             path="/profile"
             element={
@@ -682,6 +671,8 @@ function AppShell() {
                   requests={customerRequests}
                   refresh={loadCustomerData}
                   logoutCustomer={logoutCustomer}
+                  wallet={wallet}
+                  customerLoading={customerLoading}
                 />
               ) : (
                 <Navigate to="/login" replace />
@@ -1742,7 +1733,17 @@ function WalletPage({ wallet, requests, loading }) {
   );
 }
 
-function ProfilePage({ token, profile, requests, refresh, logoutCustomer }) {
+function ProfilePage({ token, profile, requests, refresh, logoutCustomer, wallet, customerLoading }) {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const allowedTabs = ["wallet", "bookings", "settings"];
+  const queryTab = new URLSearchParams(location.search).get("tab");
+  const activeTab = allowedTabs.includes(queryTab) ? queryTab : "wallet";
+
+  const handleTabChange = (value) => {
+    navigate(`/profile?tab=${value}`, { replace: true });
+  };
+
   const [formState, setFormState] = useState({
     name: profile?.name || "",
     email: profile?.email || "",
@@ -1808,112 +1809,128 @@ function ProfilePage({ token, profile, requests, refresh, logoutCustomer }) {
 
   return (
     <div className="space-y-6" data-testid="profile-page">
-      <SectionHeading eyebrow="Preferences" title="Your profile" description="Update your contact details, saved preferences, and account security settings." />
-      <Card className="border-white/10 bg-card">
-        <CardContent className="space-y-6 p-5">
-          <div className="flex items-center gap-4">
-            <Avatar className="h-16 w-16 border border-primary/25">
-              <AvatarImage src="/logo.png" alt={profile?.name || "Customer avatar"} />
-              <AvatarFallback className="bg-primary/10 text-primary">{getInitials(profile?.name)}</AvatarFallback>
-            </Avatar>
-            <div>
-              <p className="text-lg font-semibold text-white" data-testid="profile-name-display">{profile?.name}</p>
-              <p className="text-sm text-muted-foreground">{profile?.email}</p>
-            </div>
-          </div>
+      <SectionHeading eyebrow="Account" title="Your account" description="View your promo wallet, booking history, and preferences in one place." />
+      <Tabs value={activeTab} onValueChange={handleTabChange}>
+        <TabsList className="grid h-auto grid-cols-3 gap-2 bg-transparent p-0">
+          <TabsTrigger value="wallet" data-testid="profile-tab-wallet" className="border border-white/10 bg-card py-3 text-white data-[state=active]:border-primary/35 data-[state=active]:bg-primary/10 data-[state=active]:text-primary">Wallet</TabsTrigger>
+          <TabsTrigger value="bookings" data-testid="profile-tab-bookings" className="border border-white/10 bg-card py-3 text-white data-[state=active]:border-primary/35 data-[state=active]:bg-primary/10 data-[state=active]:text-primary">Bookings</TabsTrigger>
+          <TabsTrigger value="settings" data-testid="profile-tab-settings" className="border border-white/10 bg-card py-3 text-white data-[state=active]:border-primary/35 data-[state=active]:bg-primary/10 data-[state=active]:text-primary">Settings</TabsTrigger>
+        </TabsList>
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Full name" testId="profile-name-input">
-              <Input value={formState.name} onChange={(event) => setFormState((current) => ({ ...current, name: event.target.value }))} />
-            </Field>
-            <Field label="Phone" testId="profile-phone-input">
-              <Input value={formState.phone} onChange={(event) => setFormState((current) => ({ ...current, phone: event.target.value }))} />
-            </Field>
-            <Field label="Email" testId="profile-email-input">
-              <Input value={formState.email} disabled />
-            </Field>
-            <Field label="Date of birth" testId="profile-dob-input">
-              <Input value={formState.dob} onChange={(event) => setFormState((current) => ({ ...current, dob: event.target.value }))} placeholder="YYYY-MM-DD" />
-            </Field>
-          </div>
+        <TabsContent value="wallet" className="mt-6">
+          <WalletPage wallet={wallet} loading={customerLoading} requests={requests} />
+        </TabsContent>
 
-          <Separator />
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Seating preference" testId="profile-seating-select">
-              <Select value={formState.seating} onValueChange={(value) => setFormState((current) => ({ ...current, seating: value }))}>
-                <SelectTrigger><SelectValue placeholder="Choose seating" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="indoor">Indoor</SelectItem>
-                  <SelectItem value="patio">Patio</SelectItem>
-                  <SelectItem value="vip">VIP booth</SelectItem>
-                </SelectContent>
-              </Select>
-            </Field>
-            <Field label="Music vibe" testId="profile-vibe-select">
-              <Select value={formState.music_vibe} onValueChange={(value) => setFormState((current) => ({ ...current, music_vibe: value }))}>
-                <SelectTrigger><SelectValue placeholder="Choose vibe" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="afro-house">Afro-house</SelectItem>
-                  <SelectItem value="amapiano">Amapiano</SelectItem>
-                  <SelectItem value="sunday-chill">Sunday chill</SelectItem>
-                </SelectContent>
-              </Select>
-            </Field>
-          </div>
-
-          <div className="space-y-3">
-            <Label className="text-sm text-white">Dietary preferences</Label>
-            <div className="grid gap-3 sm:grid-cols-2">
-              {dietaryOptions.map((option) => (
-                <label key={option} className="flex items-center gap-3 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white" data-testid={`profile-dietary-${option}`}>
-                  <Checkbox checked={formState.dietary.includes(option)} onCheckedChange={() => toggleDietary(option)} />
-                  {option}
-                </label>
-              ))}
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-black/20 px-4 py-3">
-            <div>
-              <p className="font-medium text-white">Marketing opt-in</p>
-              <p className="text-xs text-muted-foreground">Email is the only live marketing channel for MVP.</p>
-            </div>
-            <Switch checked={formState.marketing_opt_in} onCheckedChange={(checked) => setFormState((current) => ({ ...current, marketing_opt_in: Boolean(checked) }))} data-testid="profile-marketing-switch" />
-          </div>
-
-          <Field label="Change password" testId="profile-password-input">
-            <Input type="password" value={formState.password} onChange={(event) => setFormState((current) => ({ ...current, password: event.target.value }))} placeholder="Leave blank to keep current password" />
-          </Field>
-
-          <div className="flex flex-wrap gap-3">
-            <Button onClick={saveProfile} data-testid="profile-save-button">Save changes</Button>
-            <Button variant="outline" onClick={() => logoutCustomer()} data-testid="profile-logout-button">Logout</Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card className="border-white/10 bg-card">
-        <CardHeader>
-          <CardTitle className="font-display text-3xl text-white">My requests</CardTitle>
-          <CardDescription>Recent bookings and order intents linked to your account.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {(requests || []).map((request) => (
-            <div key={request.id} className="rounded-2xl border border-white/10 bg-black/20 p-4" data-testid={`profile-request-${request.id}`}>
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="font-medium text-white">{request.reference_id}</p>
-                  <p className="text-xs text-muted-foreground">{request.request_type}</p>
+        <TabsContent value="bookings" className="mt-6">
+          <Card className="border-white/10 bg-card">
+            <CardHeader>
+              <CardTitle className="font-display text-3xl text-white">My requests</CardTitle>
+              <CardDescription>Recent bookings and order intents linked to your account.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {(requests || []).map((request) => (
+                <div key={request.id} className="rounded-2xl border border-white/10 bg-black/20 p-4" data-testid={`profile-request-${request.id}`}>
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="font-medium text-white">{request.reference_id}</p>
+                      <p className="text-xs text-muted-foreground">{request.request_type}</p>
+                    </div>
+                    <Badge className="border-primary/20 bg-primary/10 text-primary">{request.status}</Badge>
+                  </div>
+                  <p className="mt-2 text-xs text-muted-foreground">{formatDateTime(request.date)}</p>
                 </div>
-                <Badge className="border-primary/20 bg-primary/10 text-primary">{request.status}</Badge>
+              ))}
+              {!requests?.length ? <EmptyState title="No saved requests yet" body="Visit the menu or events page to start one." compact /> : null}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="settings" className="mt-6">
+          <Card className="border-white/10 bg-card">
+            <CardContent className="space-y-6 p-5">
+              <div className="flex items-center gap-4">
+                <Avatar className="h-16 w-16 border border-primary/25">
+                  <AvatarImage src="/logo.png" alt={profile?.name || "Customer avatar"} />
+                  <AvatarFallback className="bg-primary/10 text-primary">{getInitials(profile?.name)}</AvatarFallback>
+                </Avatar>
+                <div>
+                  <p className="text-lg font-semibold text-white" data-testid="profile-name-display">{profile?.name}</p>
+                  <p className="text-sm text-muted-foreground">{profile?.email}</p>
+                </div>
               </div>
-              <p className="mt-2 text-xs text-muted-foreground">{formatDateTime(request.date)}</p>
-            </div>
-          ))}
-          {!requests?.length ? <EmptyState title="No saved requests yet" body="Visit the menu or events page to start one." compact /> : null}
-        </CardContent>
-      </Card>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Full name" testId="profile-name-input">
+                  <Input value={formState.name} onChange={(event) => setFormState((current) => ({ ...current, name: event.target.value }))} />
+                </Field>
+                <Field label="Phone" testId="profile-phone-input">
+                  <Input value={formState.phone} onChange={(event) => setFormState((current) => ({ ...current, phone: event.target.value }))} />
+                </Field>
+                <Field label="Email" testId="profile-email-input">
+                  <Input value={formState.email} disabled />
+                </Field>
+                <Field label="Date of birth" testId="profile-dob-input">
+                  <Input value={formState.dob} onChange={(event) => setFormState((current) => ({ ...current, dob: event.target.value }))} placeholder="YYYY-MM-DD" />
+                </Field>
+              </div>
+
+              <Separator />
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Seating preference" testId="profile-seating-select">
+                  <Select value={formState.seating} onValueChange={(value) => setFormState((current) => ({ ...current, seating: value }))}>
+                    <SelectTrigger><SelectValue placeholder="Choose seating" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="indoor">Indoor</SelectItem>
+                      <SelectItem value="patio">Patio</SelectItem>
+                      <SelectItem value="vip">VIP booth</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </Field>
+                <Field label="Music vibe" testId="profile-vibe-select">
+                  <Select value={formState.music_vibe} onValueChange={(value) => setFormState((current) => ({ ...current, music_vibe: value }))}>
+                    <SelectTrigger><SelectValue placeholder="Choose vibe" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="afro-house">Afro-house</SelectItem>
+                      <SelectItem value="amapiano">Amapiano</SelectItem>
+                      <SelectItem value="sunday-chill">Sunday chill</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </Field>
+              </div>
+
+              <div className="space-y-3">
+                <Label className="text-sm text-white">Dietary preferences</Label>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {dietaryOptions.map((option) => (
+                    <label key={option} className="flex items-center gap-3 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white" data-testid={`profile-dietary-${option}`}>
+                      <Checkbox checked={formState.dietary.includes(option)} onCheckedChange={() => toggleDietary(option)} />
+                      {option}
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-black/20 px-4 py-3">
+                <div>
+                  <p className="font-medium text-white">Marketing opt-in</p>
+                  <p className="text-xs text-muted-foreground">Email is the only live marketing channel for MVP.</p>
+                </div>
+                <Switch checked={formState.marketing_opt_in} onCheckedChange={(checked) => setFormState((current) => ({ ...current, marketing_opt_in: Boolean(checked) }))} data-testid="profile-marketing-switch" />
+              </div>
+
+              <Field label="Change password" testId="profile-password-input">
+                <Input type="password" value={formState.password} onChange={(event) => setFormState((current) => ({ ...current, password: event.target.value }))} placeholder="Leave blank to keep current password" />
+              </Field>
+
+              <div className="flex flex-wrap gap-3">
+                <Button onClick={saveProfile} data-testid="profile-save-button">Save changes</Button>
+                <Button variant="outline" onClick={() => logoutCustomer()} data-testid="profile-logout-button">Logout</Button>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
@@ -2745,6 +2762,26 @@ function AdminMenuPage({ token, categories, refresh }) {
   };
   const [itemForm, setItemForm] = useState(initialItemForm);
   const [query, setQuery] = useState("");
+  const [resetDialogOpen, setResetDialogOpen] = useState(false);
+  const [resetSubmitting, setResetSubmitting] = useState(false);
+
+  const resetMenuToDefaults = async () => {
+    setResetSubmitting(true);
+    try {
+      const response = await api.post("/admin/menu/sync-defaults", {}, authConfig(token));
+      const { categories: cats, items, previous_categories: prevCats, previous_items: prevItems } =
+        response.data;
+      toast.success(
+        `Menu reset to defaults — ${cats} categories, ${items} items (was ${prevCats}, ${prevItems}).`,
+      );
+      setResetDialogOpen(false);
+      refresh(token);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Could not reset menu to defaults.");
+    } finally {
+      setResetSubmitting(false);
+    }
+  };
 
   useEffect(() => {
     const list = Array.isArray(categories) ? categories : [];
@@ -2912,10 +2949,43 @@ function AdminMenuPage({ token, categories, refresh }) {
           title="Menu management"
           description="Curate categories, items, prices, and tags for the digital menu."
         />
-        <Button onClick={openCreateCategory} data-testid="create-category-button">
-          <Plus className="mr-2 h-4 w-4" />Category
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            onClick={() => setResetDialogOpen(true)}
+            data-testid="reset-menu-button"
+          >
+            Reset to default prices
+          </Button>
+          <Button onClick={openCreateCategory} data-testid="create-category-button">
+            <Plus className="mr-2 h-4 w-4" />Category
+          </Button>
+        </div>
       </div>
+
+      <AlertDialog open={resetDialogOpen} onOpenChange={setResetDialogOpen}>
+        <AlertDialogContent className="border-white/10 bg-card">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Reset menu to default prices?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This drops every category and item, then re-inserts the canonical
+              menu defined in the backend (15 categories, ~50 items). Any custom
+              categories or items added via this page will be lost. The change
+              is immediate on the public site.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={resetSubmitting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={resetMenuToDefaults}
+              disabled={resetSubmitting}
+              data-testid="confirm-reset-menu-button"
+            >
+              {resetSubmitting ? "Resetting..." : "Yes, reset"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <div className="grid gap-4 lg:grid-cols-[280px,1fr]">
         <Card className="border-white/10 bg-card">
@@ -3230,6 +3300,47 @@ function AdminGalleryPage({ token, photos, refresh }) {
   const [editingPhoto, setEditingPhoto] = useState(null);
   const initialForm = { url_or_id: "", caption: "", sort_order: 0 };
   const [form, setForm] = useState(initialForm);
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkText, setBulkText] = useState("");
+  const [bulkResult, setBulkResult] = useState(null);
+  const [bulkSubmitting, setBulkSubmitting] = useState(false);
+
+  const openBulk = () => {
+    setBulkText("");
+    setBulkResult(null);
+    setBulkOpen(true);
+  };
+
+  const submitBulk = async () => {
+    if (!bulkText.trim()) {
+      toast.error("Paste at least one Drive URL.");
+      return;
+    }
+    setBulkSubmitting(true);
+    setBulkResult(null);
+    try {
+      const response = await api.post(
+        "/admin/gallery/bulk",
+        { text: bulkText },
+        authConfig(token),
+      );
+      setBulkResult(response.data);
+      const { added, skipped_duplicates: skipped, failed } = response.data;
+      if (added > 0) {
+        toast.success(`Added ${added} photo${added === 1 ? "" : "s"}.`);
+      }
+      if (failed > 0) {
+        toast.error(`${failed} URL${failed === 1 ? "" : "s"} could not be parsed.`);
+      } else if (added === 0 && skipped > 0) {
+        toast.info(`All ${skipped} URLs were already in the gallery.`);
+      }
+      refresh(token);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Bulk import failed.");
+    } finally {
+      setBulkSubmitting(false);
+    }
+  };
 
   const openCreate = () => {
     setEditingPhoto(null);
@@ -3298,16 +3409,21 @@ function AdminGalleryPage({ token, photos, refresh }) {
           title="Gallery management"
           description="Add, caption, and order public gallery photos powered by Google Drive."
         />
-        <Button onClick={openCreate} data-testid="create-gallery-photo-button">
-          <Plus className="mr-2 h-4 w-4" />Add photo
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" onClick={openBulk} data-testid="bulk-gallery-button">
+            <Plus className="mr-2 h-4 w-4" />Bulk paste
+          </Button>
+          <Button onClick={openCreate} data-testid="create-gallery-photo-button">
+            <Plus className="mr-2 h-4 w-4" />Add photo
+          </Button>
+        </div>
       </div>
 
       <Alert className="border-primary/20 bg-card/80">
         <Image className="h-4 w-4 text-primary" />
         <AlertTitle>Drive sharing tip</AlertTitle>
         <AlertDescription>
-          Paste a Google Drive share URL (the file must be set to &quot;Anyone with the link can view&quot;). The thumbnail will appear automatically.
+          Paste a Google Drive share URL (the file must be set to &quot;Anyone with the link can view&quot;). The thumbnail will appear automatically. Use <strong>Bulk paste</strong> for many photos at once — it accepts a list separated by commas or newlines (Drive&apos;s multi-select share output works directly).
         </AlertDescription>
       </Alert>
 
@@ -3357,6 +3473,60 @@ function AdminGalleryPage({ token, photos, refresh }) {
           ))}
         </div>
       )}
+
+      <Sheet open={bulkOpen} onOpenChange={setBulkOpen}>
+        <SheetContent side="right" className="w-full overflow-y-auto border-white/10 bg-card sm:max-w-xl">
+          <SheetHeader>
+            <SheetTitle>Bulk paste Drive URLs</SheetTitle>
+            <SheetDescription>
+              Paste multiple Google Drive share URLs (or file IDs) separated by commas, newlines, or both. Duplicates already in the gallery are skipped automatically.
+            </SheetDescription>
+          </SheetHeader>
+          <div className="mt-6 space-y-4">
+            <Field label="Drive URLs" testId="bulk-gallery-textarea">
+              <Textarea
+                rows={10}
+                value={bulkText}
+                onChange={(event) => setBulkText(event.target.value)}
+                placeholder="https://drive.google.com/file/d/FILE_ID_A/view, https://drive.google.com/file/d/FILE_ID_B/view, ..."
+                className="font-mono text-xs"
+              />
+            </Field>
+            <Button
+              className="w-full"
+              onClick={submitBulk}
+              disabled={bulkSubmitting}
+              data-testid="submit-bulk-gallery-button"
+            >
+              {bulkSubmitting ? "Importing..." : "Import photos"}
+            </Button>
+            {bulkResult && (
+              <Card className="border-white/10 bg-background/40">
+                <CardContent className="space-y-2 p-4 text-sm">
+                  <p>
+                    <span className="text-primary font-semibold">{bulkResult.added}</span> added,{" "}
+                    <span className="text-muted-foreground">{bulkResult.skipped_duplicates}</span> skipped (duplicates),{" "}
+                    <span className={bulkResult.failed > 0 ? "text-destructive" : "text-muted-foreground"}>
+                      {bulkResult.failed}
+                    </span>{" "}
+                    failed.
+                  </p>
+                  {bulkResult.errors?.length > 0 && (
+                    <div className="space-y-1">
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Errors</p>
+                      <ul className="list-disc space-y-1 pl-5 text-xs text-destructive">
+                        {bulkResult.errors.map((err, idx) => (
+                          <li key={idx}>{err}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        </SheetContent>
+      </Sheet>
 
       <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
         <SheetContent side="right" className="w-full overflow-y-auto border-white/10 bg-card sm:max-w-lg">

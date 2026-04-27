@@ -216,6 +216,18 @@ class GalleryPhotoUpdateRequest(BaseModel):
     sort_order: int = 0
 
 
+class GalleryBulkCreateRequest(BaseModel):
+    text: str
+
+
+class GalleryBulkResult(BaseModel):
+    added: int
+    skipped_duplicates: int
+    failed: int
+    errors: List[str] = Field(default_factory=list)
+    photos: List[GalleryPhoto] = Field(default_factory=list)
+
+
 class PromoPool(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     name: str
@@ -662,80 +674,10 @@ async def validate_promo_logic(code: str, bill_amount: float) -> PromoValidation
     )
 
 
-async def seed_database() -> None:
-    now = now_utc()
-
-    # Default event/special content for first-run seeding only.
-    # Admin-created events and specials must survive process restarts.
-    events = [
-        EventItem(
-            title="Friday After Dark",
-            date=datetime(2026, 4, 10, 20, 0, 0, tzinfo=timezone.utc),
-            description="A premium Friday link-up with deep house selectors, bottle service tables, and late-night braai platters.",
-            lineup=["BINOBOY", "TROSHKA", "B&T MUSIQ", "LEMONADE"],
-            image_url="/fridayafterdark.PNG",
-            status="scheduled",
-            cta_label="RSVP Intent",
-        ),
-        EventItem(
-            title="Saturday",
-            date=datetime(2026, 4, 11, 18, 0, 0, tzinfo=timezone.utc),
-            description="Dress up, book a table, and step into a gold-lit Saturday with headline DJs and curated bottle moments.",
-            lineup=["Line-Up Coming Soon"],
-            image_url="/birthdaybook.jpg",
-            status="scheduled",
-            cta_label="Request Booking",
-        ),
-        EventItem(
-            title="FOOTBALL LEAGUE",
-            date=datetime(2026, 4, 14, 12, 0, 0, tzinfo=timezone.utc),
-            description="Come get your fitness on with our Tuesday League and Friendlies on Thursday.",
-            lineup=["14 & 16 April 2026"],
-            image_url="/soccer.jpg",
-            status="scheduled",
-            cta_label="Request Booking",
-        ),
-    ]
-    specials = [
-        SpecialItem(
-            title="Hungry Platter Special",
-            description="The signature platter for your crew: chuck, wors, wings, liver, ribs plus pap, chakalaka, and salsa.",
-            price_label="R400.00",
-            image_url="/vv-hungry-platter.jpg",
-            available_until=now + timedelta(days=7),
-            tags=["share", "signature"],
-            status="active",
-        ),
-        SpecialItem(
-            title="Sunset Special",
-            description="Come join us for a smooth golden-hour.",
-            price_label="R150.00",
-            image_url="/corona1.jpg",
-            available_until=now + timedelta(days=5),
-            tags=["happy-hour"],
-            status="active",
-        ),
-        SpecialItem(
-            title="Bottle & Booth Night",
-            description="2 x Jägermeister only for R1000",
-            price_label="Special",
-            image_url="/DSC_0697 (1).jpg",
-            available_until=now + timedelta(days=10),
-            tags=["vip", "table-service"],
-            status="active",
-        ),
-    ]
-    if (await db.events.count_documents({})) == 0:
-        await db.events.insert_many([event.model_dump() for event in events])
-    if (await db.specials.count_documents({})) == 0:
-        await db.specials.insert_many([special.model_dump() for special in specials])
-
-    # Only seed static data once
-    existing = await db.menu_categories.count_documents({})
-    if existing > 0:
-        return
-
-    menu_categories = [
+def default_menu_categories() -> List[MenuCategory]:
+    """Canonical menu defaults — used by both the first-run seed and the
+    admin "Reset to defaults" endpoint."""
+    return [
         MenuCategory(
             name="Food",
             slug="food",
@@ -912,6 +854,82 @@ async def seed_database() -> None:
             ],
         ),
     ]
+
+
+async def seed_database() -> None:
+    now = now_utc()
+
+    # Default event/special content for first-run seeding only.
+    # Admin-created events and specials must survive process restarts.
+    events = [
+        EventItem(
+            title="Friday After Dark",
+            date=datetime(2026, 4, 10, 20, 0, 0, tzinfo=timezone.utc),
+            description="A premium Friday link-up with deep house selectors, bottle service tables, and late-night braai platters.",
+            lineup=["BINOBOY", "TROSHKA", "B&T MUSIQ", "LEMONADE"],
+            image_url="/fridayafterdark.PNG",
+            status="scheduled",
+            cta_label="RSVP Intent",
+        ),
+        EventItem(
+            title="Saturday",
+            date=datetime(2026, 4, 11, 18, 0, 0, tzinfo=timezone.utc),
+            description="Dress up, book a table, and step into a gold-lit Saturday with headline DJs and curated bottle moments.",
+            lineup=["Line-Up Coming Soon"],
+            image_url="/birthdaybook.jpg",
+            status="scheduled",
+            cta_label="Request Booking",
+        ),
+        EventItem(
+            title="FOOTBALL LEAGUE",
+            date=datetime(2026, 4, 14, 12, 0, 0, tzinfo=timezone.utc),
+            description="Come get your fitness on with our Tuesday League and Friendlies on Thursday.",
+            lineup=["14 & 16 April 2026"],
+            image_url="/soccer.jpg",
+            status="scheduled",
+            cta_label="Request Booking",
+        ),
+    ]
+    specials = [
+        SpecialItem(
+            title="Hungry Platter Special",
+            description="The signature platter for your crew: chuck, wors, wings, liver, ribs plus pap, chakalaka, and salsa.",
+            price_label="R400.00",
+            image_url="/vv-hungry-platter.jpg",
+            available_until=now + timedelta(days=7),
+            tags=["share", "signature"],
+            status="active",
+        ),
+        SpecialItem(
+            title="Sunset Special",
+            description="Come join us for a smooth golden-hour.",
+            price_label="R150.00",
+            image_url="/corona1.jpg",
+            available_until=now + timedelta(days=5),
+            tags=["happy-hour"],
+            status="active",
+        ),
+        SpecialItem(
+            title="Bottle & Booth Night",
+            description="2 x Jägermeister only for R1000",
+            price_label="Special",
+            image_url="/DSC_0697 (1).jpg",
+            available_until=now + timedelta(days=10),
+            tags=["vip", "table-service"],
+            status="active",
+        ),
+    ]
+    if (await db.events.count_documents({})) == 0:
+        await db.events.insert_many([event.model_dump() for event in events])
+    if (await db.specials.count_documents({})) == 0:
+        await db.specials.insert_many([special.model_dump() for special in specials])
+
+    # Only seed static data once
+    existing = await db.menu_categories.count_documents({})
+    if existing > 0:
+        return
+
+    menu_categories = default_menu_categories()
 
     promo_pool = PromoPool(
         name="Welcome Gold 20%",
@@ -1420,6 +1438,45 @@ async def admin_delete_menu_item(item_id: str, current_admin: dict = Depends(get
     return MessageResponse(message="Menu item deleted")
 
 
+class MenuSyncResult(BaseModel):
+    categories: int
+    items: int
+    previous_categories: int
+    previous_items: int
+
+
+@api_router.post("/admin/menu/sync-defaults", response_model=MenuSyncResult)
+async def admin_sync_menu_defaults(current_admin: dict = Depends(get_current_admin)) -> MenuSyncResult:
+    """Drops menu_categories and re-inserts the canonical defaults from
+    default_menu_categories(). Destructive — used when the operator wants
+    to reset the live menu (e.g. after a price-list overhaul)."""
+    previous_categories = await db.menu_categories.count_documents({})
+    previous_items = 0
+    async for cat in db.menu_categories.find({}, {"_id": 0, "items": 1}):
+        previous_items += len(cat.get("items", []))
+
+    await db.menu_categories.drop()
+    new_menu = default_menu_categories()
+    if new_menu:
+        await db.menu_categories.insert_many([category.model_dump() for category in new_menu])
+
+    new_item_count = sum(len(category.items) for category in new_menu)
+    await append_audit_log(
+        current_admin,
+        "sync-defaults",
+        "menu",
+        "menu_categories",
+        f"Reset menu to defaults — {len(new_menu)} categories, {new_item_count} items "
+        f"(was {previous_categories} categories, {previous_items} items)",
+    )
+    return MenuSyncResult(
+        categories=len(new_menu),
+        items=new_item_count,
+        previous_categories=previous_categories,
+        previous_items=previous_items,
+    )
+
+
 @api_router.get("/admin/gallery", response_model=List[GalleryPhoto])
 async def admin_list_gallery(current_admin: dict = Depends(get_current_admin)) -> List[GalleryPhoto]:
     return serialize_many(
@@ -1441,6 +1498,72 @@ async def admin_create_gallery_photo(payload: GalleryPhotoCreateRequest, current
     await db.gallery_photos.insert_one(photo.model_dump())
     await append_audit_log(current_admin, "create", "gallery-photo", photo.id, f"Added gallery photo {photo.drive_file_id}")
     return photo
+
+
+@api_router.post("/admin/gallery/bulk", response_model=GalleryBulkResult)
+async def admin_bulk_create_gallery_photos(
+    payload: GalleryBulkCreateRequest,
+    current_admin: dict = Depends(get_current_admin),
+) -> GalleryBulkResult:
+    parts = [p.strip() for p in re.split(r"[,\n\r\t]+", payload.text) if p.strip()]
+    if not parts:
+        raise HTTPException(status_code=400, detail="No URLs or file IDs provided")
+
+    existing_ids: set[str] = set()
+    async for doc in db.gallery_photos.find({}, {"_id": 0, "drive_file_id": 1}):
+        existing_ids.add(doc["drive_file_id"])
+
+    last_doc = await db.gallery_photos.find_one(
+        {}, {"_id": 0, "sort_order": 1}, sort=[("sort_order", -1)]
+    )
+    next_sort_order = (last_doc.get("sort_order", 0) if last_doc else 0) + 1
+
+    seen_in_payload: set[str] = set()
+    new_photos: list[GalleryPhoto] = []
+    skipped = 0
+    failed = 0
+    errors: list[str] = []
+
+    for part in parts:
+        try:
+            file_id = extract_drive_id(part)
+        except HTTPException:
+            failed += 1
+            preview = part if len(part) <= 60 else part[:57] + "..."
+            errors.append(f"Could not parse: {preview}")
+            continue
+
+        if file_id in seen_in_payload or file_id in existing_ids:
+            skipped += 1
+            continue
+
+        seen_in_payload.add(file_id)
+        photo = GalleryPhoto(
+            drive_file_id=file_id,
+            caption="",
+            sort_order=next_sort_order,
+            added_by=current_admin["id"],
+        )
+        next_sort_order += 1
+        new_photos.append(photo)
+
+    if new_photos:
+        await db.gallery_photos.insert_many([photo.model_dump() for photo in new_photos])
+        await append_audit_log(
+            current_admin,
+            "create",
+            "gallery-photo",
+            "bulk",
+            f"Bulk-added {len(new_photos)} gallery photos ({skipped} duplicates, {failed} unparseable)",
+        )
+
+    return GalleryBulkResult(
+        added=len(new_photos),
+        skipped_duplicates=skipped,
+        failed=failed,
+        errors=errors,
+        photos=new_photos,
+    )
 
 
 @api_router.put("/admin/gallery/{photo_id}", response_model=GalleryPhoto)
