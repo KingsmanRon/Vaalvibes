@@ -857,74 +857,31 @@ def default_menu_categories() -> List[MenuCategory]:
 
 
 async def seed_database() -> None:
+    """First-run bootstrap for an empty database.
+
+    The seed only runs against EMPTY collections — production data,
+    once written, is never overwritten by a redeploy. After Phase 0
+    (April 2026) this function is intentionally minimal: it provides
+    the structural data the app needs to function on a fresh install
+    (admin logins, an active welcome promo pool, the canonical menu),
+    but does NOT seed operational content like events, specials, or
+    campaigns. Those are 100% admin-managed via the /admin/* routes
+    and live in the database.
+
+    Seed contents:
+    - admin_users      — required for first-time admin login
+    - promo_pool       — required so /auth/register can issue welcome promos
+    - menu_categories  — canonical price book; the source of truth that
+                         /admin/menu/sync-defaults restores on demand
+
+    NOT seeded (operator-curated, lives in DB):
+    - events, specials, campaigns
+    """
     now = now_utc()
 
-    # Default event/special content for first-run seeding only.
-    # Admin-created events and specials must survive process restarts.
-    events = [
-        EventItem(
-            title="Friday After Dark",
-            date=datetime(2026, 4, 10, 20, 0, 0, tzinfo=timezone.utc),
-            description="A premium Friday link-up with deep house selectors, bottle service tables, and late-night braai platters.",
-            lineup=["BINOBOY", "TROSHKA", "B&T MUSIQ", "LEMONADE"],
-            image_url="/fridayafterdark.PNG",
-            status="scheduled",
-            cta_label="RSVP Intent",
-        ),
-        EventItem(
-            title="Saturday",
-            date=datetime(2026, 4, 11, 18, 0, 0, tzinfo=timezone.utc),
-            description="Dress up, book a table, and step into a gold-lit Saturday with headline DJs and curated bottle moments.",
-            lineup=["Line-Up Coming Soon"],
-            image_url="/birthdaybook.jpg",
-            status="scheduled",
-            cta_label="Request Booking",
-        ),
-        EventItem(
-            title="FOOTBALL LEAGUE",
-            date=datetime(2026, 4, 14, 12, 0, 0, tzinfo=timezone.utc),
-            description="Come get your fitness on with our Tuesday League and Friendlies on Thursday.",
-            lineup=["14 & 16 April 2026"],
-            image_url="/soccer.jpg",
-            status="scheduled",
-            cta_label="Request Booking",
-        ),
-    ]
-    specials = [
-        SpecialItem(
-            title="Hungry Platter Special",
-            description="The signature platter for your crew: chuck, wors, wings, liver, ribs plus pap, chakalaka, and salsa.",
-            price_label="R400.00",
-            image_url="/vv-hungry-platter.jpg",
-            available_until=now + timedelta(days=7),
-            tags=["share", "signature"],
-            status="active",
-        ),
-        SpecialItem(
-            title="Sunset Special",
-            description="Come join us for a smooth golden-hour.",
-            price_label="R150.00",
-            image_url="/corona1.jpg",
-            available_until=now + timedelta(days=5),
-            tags=["happy-hour"],
-            status="active",
-        ),
-        SpecialItem(
-            title="Bottle & Booth Night",
-            description="2 x Jägermeister only for R1000",
-            price_label="Special",
-            image_url="/DSC_0697 (1).jpg",
-            available_until=now + timedelta(days=10),
-            tags=["vip", "table-service"],
-            status="active",
-        ),
-    ]
-    if (await db.events.count_documents({})) == 0:
-        await db.events.insert_many([event.model_dump() for event in events])
-    if (await db.specials.count_documents({})) == 0:
-        await db.specials.insert_many([special.model_dump() for special in specials])
-
-    # Only seed static data once
+    # Only seed static data once — guarded by menu_categories since it's the
+    # most stable structural marker (admin_users + promo_pool follow the same
+    # one-time-only pattern below).
     existing = await db.menu_categories.count_documents({})
     if existing > 0:
         return
@@ -942,11 +899,6 @@ async def seed_database() -> None:
         audience="new-customers",
         active=True,
     )
-
-    campaigns = [
-        Campaign(subject="This Weekend at Vaal Vibes", audience="all-opted-in", body_html="<h1>This weekend</h1><p>Specials, events, and premium table requests.</p>", status="draft"),
-        Campaign(subject="VIP Table Requests Open", audience="vip-segment", body_html="<h1>Request your booth</h1><p>Book premium tables for Champagne Saturday.</p>", status="mock-dispatched"),
-    ]
 
     admin_users = [
         {
@@ -978,11 +930,8 @@ async def seed_database() -> None:
         },
     ]
 
-    demo_customer = None  # No demo customer seeded in live environment
-
     await db.menu_categories.insert_many([category.model_dump() for category in menu_categories])
     await db.promo_pools.insert_one(promo_pool.model_dump())
-    await db.campaigns.insert_many([campaign.model_dump() for campaign in campaigns])
     await db.admin_users.insert_many(admin_users)
     await db.audit_logs.insert_one(
         AuditLogEntry(
@@ -991,7 +940,7 @@ async def seed_database() -> None:
             action="seed",
             entity_type="system",
             entity_id="seed-data",
-            summary="Seeded Vaal Vibes live environment data",
+            summary="Seeded Vaal Vibes structural bootstrap (admins, promo pool, menu)",
         ).model_dump()
     )
 
