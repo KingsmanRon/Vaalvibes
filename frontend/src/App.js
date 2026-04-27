@@ -29,7 +29,6 @@ import {
   UserRound,
   Users,
   UtensilsCrossed,
-  Wallet,
   WifiOff,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -138,7 +137,6 @@ const customerLinks = [
   { to: "/menu", label: "Menu", icon: UtensilsCrossed },
   { to: "/events", label: "Events", icon: CalendarDays },
   { to: "/gallery", label: "Gallery", icon: Image },
-  { to: "/wallet", label: "Wallet", icon: Wallet },
   { to: "/profile", label: "Profile", icon: UserRound },
 ];
 
@@ -662,16 +660,7 @@ function AppShell() {
             element={<GalleryPage photos={bootstrap.gallery || []} loading={bootstrapLoading} />}
           />
           <Route path="/birthdays" element={<BirthdayPage />} />
-          <Route
-            path="/wallet"
-            element={
-              customerToken ? (
-                <WalletPage wallet={wallet} loading={customerLoading} requests={customerRequests} />
-              ) : (
-                <Navigate to="/login" replace />
-              )
-            }
-          />
+          <Route path="/wallet" element={<Navigate to="/profile?tab=wallet" replace />} />
           <Route
             path="/profile"
             element={
@@ -682,6 +671,8 @@ function AppShell() {
                   requests={customerRequests}
                   refresh={loadCustomerData}
                   logoutCustomer={logoutCustomer}
+                  wallet={wallet}
+                  customerLoading={customerLoading}
                 />
               ) : (
                 <Navigate to="/login" replace />
@@ -1742,7 +1733,17 @@ function WalletPage({ wallet, requests, loading }) {
   );
 }
 
-function ProfilePage({ token, profile, requests, refresh, logoutCustomer }) {
+function ProfilePage({ token, profile, requests, refresh, logoutCustomer, wallet, customerLoading }) {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const allowedTabs = ["wallet", "bookings", "settings"];
+  const queryTab = new URLSearchParams(location.search).get("tab");
+  const activeTab = allowedTabs.includes(queryTab) ? queryTab : "wallet";
+
+  const handleTabChange = (value) => {
+    navigate(`/profile?tab=${value}`, { replace: true });
+  };
+
   const [formState, setFormState] = useState({
     name: profile?.name || "",
     email: profile?.email || "",
@@ -1808,112 +1809,128 @@ function ProfilePage({ token, profile, requests, refresh, logoutCustomer }) {
 
   return (
     <div className="space-y-6" data-testid="profile-page">
-      <SectionHeading eyebrow="Preferences" title="Your profile" description="Update your contact details, saved preferences, and account security settings." />
-      <Card className="border-white/10 bg-card">
-        <CardContent className="space-y-6 p-5">
-          <div className="flex items-center gap-4">
-            <Avatar className="h-16 w-16 border border-primary/25">
-              <AvatarImage src="/logo.png" alt={profile?.name || "Customer avatar"} />
-              <AvatarFallback className="bg-primary/10 text-primary">{getInitials(profile?.name)}</AvatarFallback>
-            </Avatar>
-            <div>
-              <p className="text-lg font-semibold text-white" data-testid="profile-name-display">{profile?.name}</p>
-              <p className="text-sm text-muted-foreground">{profile?.email}</p>
-            </div>
-          </div>
+      <SectionHeading eyebrow="Account" title="Your account" description="View your promo wallet, booking history, and preferences in one place." />
+      <Tabs value={activeTab} onValueChange={handleTabChange}>
+        <TabsList className="grid h-auto grid-cols-3 gap-2 bg-transparent p-0">
+          <TabsTrigger value="wallet" data-testid="profile-tab-wallet" className="border border-white/10 bg-card py-3 text-white data-[state=active]:border-primary/35 data-[state=active]:bg-primary/10 data-[state=active]:text-primary">Wallet</TabsTrigger>
+          <TabsTrigger value="bookings" data-testid="profile-tab-bookings" className="border border-white/10 bg-card py-3 text-white data-[state=active]:border-primary/35 data-[state=active]:bg-primary/10 data-[state=active]:text-primary">Bookings</TabsTrigger>
+          <TabsTrigger value="settings" data-testid="profile-tab-settings" className="border border-white/10 bg-card py-3 text-white data-[state=active]:border-primary/35 data-[state=active]:bg-primary/10 data-[state=active]:text-primary">Settings</TabsTrigger>
+        </TabsList>
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Full name" testId="profile-name-input">
-              <Input value={formState.name} onChange={(event) => setFormState((current) => ({ ...current, name: event.target.value }))} />
-            </Field>
-            <Field label="Phone" testId="profile-phone-input">
-              <Input value={formState.phone} onChange={(event) => setFormState((current) => ({ ...current, phone: event.target.value }))} />
-            </Field>
-            <Field label="Email" testId="profile-email-input">
-              <Input value={formState.email} disabled />
-            </Field>
-            <Field label="Date of birth" testId="profile-dob-input">
-              <Input value={formState.dob} onChange={(event) => setFormState((current) => ({ ...current, dob: event.target.value }))} placeholder="YYYY-MM-DD" />
-            </Field>
-          </div>
+        <TabsContent value="wallet" className="mt-6">
+          <WalletPage wallet={wallet} loading={customerLoading} requests={requests} />
+        </TabsContent>
 
-          <Separator />
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Seating preference" testId="profile-seating-select">
-              <Select value={formState.seating} onValueChange={(value) => setFormState((current) => ({ ...current, seating: value }))}>
-                <SelectTrigger><SelectValue placeholder="Choose seating" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="indoor">Indoor</SelectItem>
-                  <SelectItem value="patio">Patio</SelectItem>
-                  <SelectItem value="vip">VIP booth</SelectItem>
-                </SelectContent>
-              </Select>
-            </Field>
-            <Field label="Music vibe" testId="profile-vibe-select">
-              <Select value={formState.music_vibe} onValueChange={(value) => setFormState((current) => ({ ...current, music_vibe: value }))}>
-                <SelectTrigger><SelectValue placeholder="Choose vibe" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="afro-house">Afro-house</SelectItem>
-                  <SelectItem value="amapiano">Amapiano</SelectItem>
-                  <SelectItem value="sunday-chill">Sunday chill</SelectItem>
-                </SelectContent>
-              </Select>
-            </Field>
-          </div>
-
-          <div className="space-y-3">
-            <Label className="text-sm text-white">Dietary preferences</Label>
-            <div className="grid gap-3 sm:grid-cols-2">
-              {dietaryOptions.map((option) => (
-                <label key={option} className="flex items-center gap-3 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white" data-testid={`profile-dietary-${option}`}>
-                  <Checkbox checked={formState.dietary.includes(option)} onCheckedChange={() => toggleDietary(option)} />
-                  {option}
-                </label>
-              ))}
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-black/20 px-4 py-3">
-            <div>
-              <p className="font-medium text-white">Marketing opt-in</p>
-              <p className="text-xs text-muted-foreground">Email is the only live marketing channel for MVP.</p>
-            </div>
-            <Switch checked={formState.marketing_opt_in} onCheckedChange={(checked) => setFormState((current) => ({ ...current, marketing_opt_in: Boolean(checked) }))} data-testid="profile-marketing-switch" />
-          </div>
-
-          <Field label="Change password" testId="profile-password-input">
-            <Input type="password" value={formState.password} onChange={(event) => setFormState((current) => ({ ...current, password: event.target.value }))} placeholder="Leave blank to keep current password" />
-          </Field>
-
-          <div className="flex flex-wrap gap-3">
-            <Button onClick={saveProfile} data-testid="profile-save-button">Save changes</Button>
-            <Button variant="outline" onClick={() => logoutCustomer()} data-testid="profile-logout-button">Logout</Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card className="border-white/10 bg-card">
-        <CardHeader>
-          <CardTitle className="font-display text-3xl text-white">My requests</CardTitle>
-          <CardDescription>Recent bookings and order intents linked to your account.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {(requests || []).map((request) => (
-            <div key={request.id} className="rounded-2xl border border-white/10 bg-black/20 p-4" data-testid={`profile-request-${request.id}`}>
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="font-medium text-white">{request.reference_id}</p>
-                  <p className="text-xs text-muted-foreground">{request.request_type}</p>
+        <TabsContent value="bookings" className="mt-6">
+          <Card className="border-white/10 bg-card">
+            <CardHeader>
+              <CardTitle className="font-display text-3xl text-white">My requests</CardTitle>
+              <CardDescription>Recent bookings and order intents linked to your account.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {(requests || []).map((request) => (
+                <div key={request.id} className="rounded-2xl border border-white/10 bg-black/20 p-4" data-testid={`profile-request-${request.id}`}>
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="font-medium text-white">{request.reference_id}</p>
+                      <p className="text-xs text-muted-foreground">{request.request_type}</p>
+                    </div>
+                    <Badge className="border-primary/20 bg-primary/10 text-primary">{request.status}</Badge>
+                  </div>
+                  <p className="mt-2 text-xs text-muted-foreground">{formatDateTime(request.date)}</p>
                 </div>
-                <Badge className="border-primary/20 bg-primary/10 text-primary">{request.status}</Badge>
+              ))}
+              {!requests?.length ? <EmptyState title="No saved requests yet" body="Visit the menu or events page to start one." compact /> : null}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="settings" className="mt-6">
+          <Card className="border-white/10 bg-card">
+            <CardContent className="space-y-6 p-5">
+              <div className="flex items-center gap-4">
+                <Avatar className="h-16 w-16 border border-primary/25">
+                  <AvatarImage src="/logo.png" alt={profile?.name || "Customer avatar"} />
+                  <AvatarFallback className="bg-primary/10 text-primary">{getInitials(profile?.name)}</AvatarFallback>
+                </Avatar>
+                <div>
+                  <p className="text-lg font-semibold text-white" data-testid="profile-name-display">{profile?.name}</p>
+                  <p className="text-sm text-muted-foreground">{profile?.email}</p>
+                </div>
               </div>
-              <p className="mt-2 text-xs text-muted-foreground">{formatDateTime(request.date)}</p>
-            </div>
-          ))}
-          {!requests?.length ? <EmptyState title="No saved requests yet" body="Visit the menu or events page to start one." compact /> : null}
-        </CardContent>
-      </Card>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Full name" testId="profile-name-input">
+                  <Input value={formState.name} onChange={(event) => setFormState((current) => ({ ...current, name: event.target.value }))} />
+                </Field>
+                <Field label="Phone" testId="profile-phone-input">
+                  <Input value={formState.phone} onChange={(event) => setFormState((current) => ({ ...current, phone: event.target.value }))} />
+                </Field>
+                <Field label="Email" testId="profile-email-input">
+                  <Input value={formState.email} disabled />
+                </Field>
+                <Field label="Date of birth" testId="profile-dob-input">
+                  <Input value={formState.dob} onChange={(event) => setFormState((current) => ({ ...current, dob: event.target.value }))} placeholder="YYYY-MM-DD" />
+                </Field>
+              </div>
+
+              <Separator />
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Seating preference" testId="profile-seating-select">
+                  <Select value={formState.seating} onValueChange={(value) => setFormState((current) => ({ ...current, seating: value }))}>
+                    <SelectTrigger><SelectValue placeholder="Choose seating" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="indoor">Indoor</SelectItem>
+                      <SelectItem value="patio">Patio</SelectItem>
+                      <SelectItem value="vip">VIP booth</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </Field>
+                <Field label="Music vibe" testId="profile-vibe-select">
+                  <Select value={formState.music_vibe} onValueChange={(value) => setFormState((current) => ({ ...current, music_vibe: value }))}>
+                    <SelectTrigger><SelectValue placeholder="Choose vibe" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="afro-house">Afro-house</SelectItem>
+                      <SelectItem value="amapiano">Amapiano</SelectItem>
+                      <SelectItem value="sunday-chill">Sunday chill</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </Field>
+              </div>
+
+              <div className="space-y-3">
+                <Label className="text-sm text-white">Dietary preferences</Label>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {dietaryOptions.map((option) => (
+                    <label key={option} className="flex items-center gap-3 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white" data-testid={`profile-dietary-${option}`}>
+                      <Checkbox checked={formState.dietary.includes(option)} onCheckedChange={() => toggleDietary(option)} />
+                      {option}
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-black/20 px-4 py-3">
+                <div>
+                  <p className="font-medium text-white">Marketing opt-in</p>
+                  <p className="text-xs text-muted-foreground">Email is the only live marketing channel for MVP.</p>
+                </div>
+                <Switch checked={formState.marketing_opt_in} onCheckedChange={(checked) => setFormState((current) => ({ ...current, marketing_opt_in: Boolean(checked) }))} data-testid="profile-marketing-switch" />
+              </div>
+
+              <Field label="Change password" testId="profile-password-input">
+                <Input type="password" value={formState.password} onChange={(event) => setFormState((current) => ({ ...current, password: event.target.value }))} placeholder="Leave blank to keep current password" />
+              </Field>
+
+              <div className="flex flex-wrap gap-3">
+                <Button onClick={saveProfile} data-testid="profile-save-button">Save changes</Button>
+                <Button variant="outline" onClick={() => logoutCustomer()} data-testid="profile-logout-button">Logout</Button>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
