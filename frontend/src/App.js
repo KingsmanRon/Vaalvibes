@@ -265,6 +265,7 @@ function AppShell() {
   const [adminMenu, setAdminMenu] = useState([]);
   const [adminGallery, setAdminGallery] = useState([]);
   const [promoPools, setPromoPools] = useState([]);
+  const [issuedPromos, setIssuedPromos] = useState([]);
   const [campaigns, setCampaigns] = useState([]);
   const [adminUsers, setAdminUsers] = useState([]);
   const [auditLogs, setAuditLogs] = useState([]);
@@ -361,6 +362,7 @@ function AppShell() {
       setAdminMenu([]);
       setAdminGallery([]);
       setPromoPools([]);
+      setIssuedPromos([]);
       setCampaigns([]);
       setAdminUsers([]);
       setAuditLogs([]);
@@ -377,6 +379,7 @@ function AppShell() {
         menuResponse,
         galleryResponse,
         poolsResponse,
+        promoCodesResponse,
         campaignsResponse,
         usersResponse,
         auditResponse,
@@ -388,6 +391,7 @@ function AppShell() {
         api.get("/admin/menu/categories", authConfig(token)),
         api.get("/admin/gallery", authConfig(token)),
         api.get("/admin/promo-pools", authConfig(token)),
+        api.get("/admin/promo-codes", authConfig(token)),
         api.get("/admin/campaigns", authConfig(token)),
         api.get("/admin/users", authConfig(token)),
         api.get("/admin/audit-logs", authConfig(token)),
@@ -399,6 +403,7 @@ function AppShell() {
       setAdminMenu(menuResponse.data);
       setAdminGallery(galleryResponse.data);
       setPromoPools(poolsResponse.data);
+      setIssuedPromos(promoCodesResponse.data);
       setCampaigns(campaignsResponse.data);
       setAdminUsers(usersResponse.data);
       setAuditLogs(auditResponse.data);
@@ -586,7 +591,7 @@ function AppShell() {
               path="/admin/promo"
               element={
                 adminToken ? (
-                  <AdminPromoPage token={adminToken} promoPools={promoPools} refresh={loadAdminData} />
+                  <AdminPromoPage token={adminToken} promoPools={promoPools} issuedPromos={issuedPromos} refresh={loadAdminData} />
                 ) : (
                   <Navigate to="/admin/login" replace />
                 )
@@ -3582,7 +3587,7 @@ function AdminGalleryPage({ token, photos, refresh }) {
   );
 }
 
-function AdminPromoPage({ token, promoPools, refresh }) {
+function AdminPromoPage({ token, promoPools, issuedPromos, refresh }) {
   const [promoCode, setPromoCode] = useState("");
   const [billAmount, setBillAmount] = useState("1600");
   const [validation, setValidation] = useState(null);
@@ -3659,6 +3664,36 @@ function AdminPromoPage({ token, promoPools, refresh }) {
       refresh(token);
     } catch (error) {
       toast.error(error.response?.data?.detail || "Could not create promo pool.");
+    }
+  };
+
+  const deactivatePool = async (poolId) => {
+    try {
+      await api.post(`/admin/promo-pools/${poolId}/deactivate`, {}, authConfig(token));
+      toast.success("Promo pool deactivated.");
+      refresh(token);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Could not deactivate pool.");
+    }
+  };
+
+  const deletePool = async (poolId) => {
+    try {
+      await api.delete(`/admin/promo-pools/${poolId}`, authConfig(token));
+      toast.success("Promo pool deleted.");
+      refresh(token);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Could not delete pool.");
+    }
+  };
+
+  const revokeIssuedPromo = async (promoId) => {
+    try {
+      await api.post(`/admin/promo/revoke/${promoId}`, {}, authConfig(token));
+      toast.success("Promo revoked.");
+      refresh(token);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Could not revoke promo.");
     }
   };
 
@@ -3759,6 +3794,7 @@ function AdminPromoPage({ token, promoPools, refresh }) {
                   <TableHead>Discount</TableHead>
                   <TableHead>Spend</TableHead>
                   <TableHead>Active</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -3768,8 +3804,104 @@ function AdminPromoPage({ token, promoPools, refresh }) {
                     <TableCell>{pool.discount_value}{pool.discount_type === "percentage" ? "%" : " ZAR"}</TableCell>
                     <TableCell>{formatCurrency(pool.min_spend)}</TableCell>
                     <TableCell><Badge className={pool.active ? "border-primary/20 bg-primary/10 text-primary" : "border-white/10 bg-transparent text-white"}>{pool.active ? "active" : "inactive"}</Badge></TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex flex-wrap justify-end gap-2">
+                        {pool.active ? (
+                          <AlertDialog>
+                            <Button asChild variant="outline" size="sm" data-testid={`promo-pool-deactivate-${pool.id}`}>
+                              <button type="button">Deactivate</button>
+                            </Button>
+                            <AlertDialogContent className="border-white/10 bg-card">
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Deactivate this promo pool?</AlertDialogTitle>
+                                <AlertDialogDescription>New customers will stop receiving welcome promos from this pool. Existing issued codes are not affected.</AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction onClick={() => deactivatePool(pool.id)} data-testid={`promo-pool-deactivate-confirm-${pool.id}`}>Deactivate</AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        ) : null}
+                        <AlertDialog>
+                          <Button asChild variant="destructive" size="sm" data-testid={`promo-pool-delete-${pool.id}`}>
+                            <button type="button">Delete</button>
+                          </Button>
+                          <AlertDialogContent className="border-white/10 bg-card">
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Delete this promo pool?</AlertDialogTitle>
+                              <AlertDialogDescription>This permanently removes the pool. The request fails if any active codes were issued from it — revoke those first.</AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction onClick={() => deletePool(pool.id)} data-testid={`promo-pool-delete-confirm-${pool.id}`}>Delete</AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      </div>
+                    </TableCell>
                   </TableRow>
                 ))}
+              </TableBody>
+            </Table>
+          </ScrollArea>
+        </CardContent>
+      </Card>
+      <Card className="border-white/10 bg-card">
+        <CardHeader>
+          <CardTitle className="text-lg text-white">Issued promo codes</CardTitle>
+          <CardDescription>Revoke a code to stop it from being redeemed at the desk.</CardDescription>
+        </CardHeader>
+        <CardContent className="p-0">
+          <ScrollArea className="w-full">
+            <Table data-testid="issued-promos-table">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Code</TableHead>
+                  <TableHead>Discount</TableHead>
+                  <TableHead>Min spend</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Expires</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {(issuedPromos || []).length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={6} className="text-center text-sm text-muted-foreground">No promo codes have been issued.</TableCell>
+                  </TableRow>
+                ) : (
+                  (issuedPromos || []).map((promo) => (
+                    <TableRow key={promo.id}>
+                      <TableCell className="font-mono">{promo.code}</TableCell>
+                      <TableCell>{promo.discount_value}{promo.discount_type === "percentage" ? "%" : " ZAR"}</TableCell>
+                      <TableCell>{formatCurrency(promo.min_spend)}</TableCell>
+                      <TableCell>
+                        <Badge className={promo.status === "active" ? "border-primary/20 bg-primary/10 text-primary" : "border-white/10 bg-transparent text-white"}>{promo.status}</Badge>
+                      </TableCell>
+                      <TableCell>{formatDate(promo.expires_at)}</TableCell>
+                      <TableCell className="text-right">
+                        {promo.status === "active" ? (
+                          <AlertDialog>
+                            <Button asChild variant="outline" size="sm" data-testid={`issued-promo-revoke-${promo.id}`}>
+                              <button type="button">Revoke</button>
+                            </Button>
+                            <AlertDialogContent className="border-white/10 bg-card">
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Revoke this code?</AlertDialogTitle>
+                                <AlertDialogDescription>The customer will no longer be able to redeem {promo.code}. This is logged in the audit trail.</AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction onClick={() => revokeIssuedPromo(promo.id)} data-testid={`issued-promo-revoke-confirm-${promo.id}`}>Revoke</AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        ) : null}
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
               </TableBody>
             </Table>
           </ScrollArea>

@@ -536,18 +536,14 @@ async def append_audit_log(actor: dict, action: str, entity_type: str, entity_id
     await db.audit_logs.insert_one(entry.model_dump())
 
 
-async def get_active_promo_pool() -> dict:
-    pool = await db.promo_pools.find_one({"active": True}, {"_id": 0})
-    if pool:
-        return pool
-    fallback = await db.promo_pools.find_one({}, {"_id": 0})
-    if not fallback:
-        raise HTTPException(status_code=500, detail="No promo pool configured")
-    return fallback
+async def get_active_promo_pool() -> Optional[dict]:
+    return await db.promo_pools.find_one({"active": True}, {"_id": 0})
 
 
-async def issue_welcome_promo(user_id: str) -> PromoCode:
+async def issue_welcome_promo(user_id: str) -> Optional[PromoCode]:
     pool = await get_active_promo_pool()
+    if not pool:
+        return None
     code_value = f"VV-{uuid.uuid4().hex[:8].upper()}"
     signature = promo_signature(code_value, user_id, pool["id"])
     promo = PromoCode(
@@ -888,18 +884,6 @@ async def seed_database() -> None:
 
     menu_categories = default_menu_categories()
 
-    promo_pool = PromoPool(
-        name="Welcome Gold 20%",
-        discount_type="percentage",
-        discount_value=20,
-        min_spend=1500,
-        start_at=now - timedelta(days=1),
-        end_at=now + timedelta(days=30),
-        max_redemptions=1,
-        audience="new-customers",
-        active=True,
-    )
-
     admin_users = [
         {
             "id": str(uuid.uuid4()),
@@ -931,7 +915,6 @@ async def seed_database() -> None:
     ]
 
     await db.menu_categories.insert_many([category.model_dump() for category in menu_categories])
-    await db.promo_pools.insert_one(promo_pool.model_dump())
     await db.admin_users.insert_many(admin_users)
     await db.audit_logs.insert_one(
         AuditLogEntry(
@@ -940,7 +923,7 @@ async def seed_database() -> None:
             action="seed",
             entity_type="system",
             entity_id="seed-data",
-            summary="Seeded Vaal Vibes structural bootstrap (admins, promo pool, menu)",
+            summary="Seeded Vaal Vibes structural bootstrap (admins, menu)",
         ).model_dump()
     )
 
@@ -1049,13 +1032,18 @@ async def register_customer(payload: CustomerRegisterRequest) -> AuthResponse:
     await db.customers.insert_one(customer)
     promo = await issue_welcome_promo(customer["id"])
     token = create_token(customer["id"], "customer", customer["name"], customer["email"])
+    promo_info = (
+        PromoInfo(percentage_discount=int(promo.discount_value), min_spend=promo.min_spend, expires_at=promo.expires_at)
+        if promo
+        else None
+    )
     return AuthResponse(
         access_token=token,
         role="customer",
         user_id=customer["id"],
         name=customer["name"],
         email=customer["email"],
-        promo=PromoInfo(percentage_discount=int(promo.discount_value), min_spend=promo.min_spend, expires_at=promo.expires_at),
+        promo=promo_info,
     )
 
 
@@ -1646,6 +1634,38 @@ async def admin_update_promo_pool(pool_id: str, payload: PromoPoolCreateRequest,
         raise HTTPException(status_code=404, detail="Promo pool not found")
     await append_audit_log(current_admin, "update", "promo-pool", pool_id, f"Updated promo pool {updated['name']}")
     return updated
+
+
+@api_router.post("/admin/promo-pools/{pool_id}/deactivate", response_model=PromoPool)
+async def admin_deactivate_promo_pool(pool_id: str, current_admin: dict = Depends(get_current_admin)) -> PromoPool:
+    existing = await db.promo_pools.find_one({"id": pool_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Promo pool not found")
+    await db.promo_pools.update_one({"id": pool_id}, {"$set": {"active": False}})
+    updated = serialize(await db.promo_pools.find_one({"id": pool_id}, {"_id": 0}))
+    await append_audit_log(current_admin, "deactivate", "promo-pool", pool_id, f"Deactivated promo pool {updated['name']}")
+    return updated
+
+
+@api_router.delete("/admin/promo-pools/{pool_id}", response_model=MessageResponse)
+async def admin_delete_promo_pool(pool_id: str, current_admin: dict = Depends(get_current_admin)) -> MessageResponse:
+    existing = await db.promo_pools.find_one({"id": pool_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Promo pool not found")
+    issued = await db.promo_codes.count_documents({"pool_id": pool_id, "status": "active"})
+    if issued > 0:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot delete pool with {issued} active promo code(s). Revoke them first or deactivate the pool instead.",
+        )
+    await db.promo_pools.delete_one({"id": pool_id})
+    await append_audit_log(current_admin, "delete", "promo-pool", pool_id, f"Deleted promo pool {existing['name']}")
+    return MessageResponse(message="Promo pool deleted")
+
+
+@api_router.get("/admin/promo-codes", response_model=List[PromoCode])
+async def admin_list_promo_codes(current_admin: dict = Depends(get_current_admin)) -> List[PromoCode]:
+    return serialize_many(await db.promo_codes.find({}, {"_id": 0}).sort("issued_at", -1).to_list(length=500))
 
 
 @api_router.get("/admin/requests", response_model=List[CustomerRequest])
