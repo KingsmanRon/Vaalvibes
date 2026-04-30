@@ -67,6 +67,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Toaster, toast } from "@/components/ui/sonner";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -3712,9 +3713,9 @@ function AdminPromoPage({ token, promoPools, issuedPromos, refresh }) {
             <div className="flex flex-wrap gap-3">
               <Button onClick={validatePromo} data-testid="promo-validate-button">Validate</Button>
               <AlertDialog>
-                <Button asChild variant="outline" data-testid="promo-redeem-open-button">
-                  <button type="button">Redeem</button>
-                </Button>
+                <AlertDialogTrigger asChild>
+                  <Button variant="outline" data-testid="promo-redeem-open-button">Redeem</Button>
+                </AlertDialogTrigger>
                 <AlertDialogContent className="border-white/10 bg-card">
                   <AlertDialogHeader>
                     <AlertDialogTitle>Redeem this promo?</AlertDialogTitle>
@@ -3808,9 +3809,9 @@ function AdminPromoPage({ token, promoPools, issuedPromos, refresh }) {
                       <div className="flex flex-wrap justify-end gap-2">
                         {pool.active ? (
                           <AlertDialog>
-                            <Button asChild variant="outline" size="sm" data-testid={`promo-pool-deactivate-${pool.id}`}>
-                              <button type="button">Deactivate</button>
-                            </Button>
+                            <AlertDialogTrigger asChild>
+                              <Button variant="outline" size="sm" data-testid={`promo-pool-deactivate-${pool.id}`}>Deactivate</Button>
+                            </AlertDialogTrigger>
                             <AlertDialogContent className="border-white/10 bg-card">
                               <AlertDialogHeader>
                                 <AlertDialogTitle>Deactivate this promo pool?</AlertDialogTitle>
@@ -3824,9 +3825,9 @@ function AdminPromoPage({ token, promoPools, issuedPromos, refresh }) {
                           </AlertDialog>
                         ) : null}
                         <AlertDialog>
-                          <Button asChild variant="destructive" size="sm" data-testid={`promo-pool-delete-${pool.id}`}>
-                            <button type="button">Delete</button>
-                          </Button>
+                          <AlertDialogTrigger asChild>
+                            <Button variant="destructive" size="sm" data-testid={`promo-pool-delete-${pool.id}`}>Delete</Button>
+                          </AlertDialogTrigger>
                           <AlertDialogContent className="border-white/10 bg-card">
                             <AlertDialogHeader>
                               <AlertDialogTitle>Delete this promo pool?</AlertDialogTitle>
@@ -3883,9 +3884,9 @@ function AdminPromoPage({ token, promoPools, issuedPromos, refresh }) {
                       <TableCell className="text-right">
                         {promo.status === "active" ? (
                           <AlertDialog>
-                            <Button asChild variant="outline" size="sm" data-testid={`issued-promo-revoke-${promo.id}`}>
-                              <button type="button">Revoke</button>
-                            </Button>
+                            <AlertDialogTrigger asChild>
+                              <Button variant="outline" size="sm" data-testid={`issued-promo-revoke-${promo.id}`}>Revoke</Button>
+                            </AlertDialogTrigger>
                             <AlertDialogContent className="border-white/10 bg-card">
                               <AlertDialogHeader>
                                 <AlertDialogTitle>Revoke this code?</AlertDialogTitle>
