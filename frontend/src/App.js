@@ -1101,11 +1101,10 @@ function HomePage({ bootstrap, loading, error, onOpenRequest, onOpenSpecial }) {
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="text-xs uppercase tracking-[0.28em] text-primary">Welcome reward</p>
-                  <p className="mt-2 text-3xl font-semibold text-white" data-testid="wallet-preview-discount">20% off</p>
+                  <p className="mt-2 text-3xl font-semibold text-white" data-testid="wallet-preview-discount">To be announced soon.</p>
                 </div>
                 <Ticket className="h-8 w-8 text-primary" />
               </div>
-              <p className="mt-3 text-sm text-white/75">Valid when your in-venue bill exceeds R1500. Redeem with staff at the promo desk.</p>
             </div>
             <Button asChild className="h-12" data-testid="wallet-preview-login-button">
               <Link to="/login">Unlock your wallet</Link>
