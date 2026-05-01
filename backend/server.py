@@ -1,17 +1,20 @@
+from collections import deque
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import List, Literal, Optional
+from typing import Deque, Dict, List, Literal, Optional, Tuple
 
 import hmac
 import logging
 import os
 import re
+import threading
 import uuid
 
 import jwt
+import pyotp
 import resend
 from dotenv import load_dotenv
-from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, status
+from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request, status
 from motor.motor_asyncio import AsyncIOMotorClient
 from passlib.context import CryptContext
 from pydantic import BaseModel, ConfigDict, Field
@@ -67,7 +70,20 @@ class AuthResponse(BaseModel):
     name: str
     email: str
     promo: Optional[PromoInfo] = None
-    demo_mfa_code: Optional[str] = None
+
+
+class AdminMfaSetupResponse(BaseModel):
+    """Returned when an admin first logs in and has not yet enrolled in TOTP.
+
+    The provisioning URI is one-shot: the secret is generated and stored on
+    the admin record, but `totp_enrolled` stays false until the admin proves
+    possession by submitting a valid OTP on a follow-up login.
+    """
+
+    mfa_setup_required: bool = True
+    provisioning_uri: str
+    secret: str
+    issuer: str = "Vaal Vibes Admin"
 
 
 class UserPreferencePayload(BaseModel):
@@ -94,7 +110,7 @@ class CustomerLoginRequest(BaseModel):
 class AdminLoginRequest(BaseModel):
     email: str
     password: str
-    otp: str
+    otp: Optional[str] = None
 
 
 class MenuItem(BaseModel):
@@ -498,6 +514,137 @@ def promo_signature(code: str, user_id: str, pool_id: str) -> str:
     return digest[:16].upper()
 
 
+# ─── TOTP MFA ────────────────────────────────────────────────────────────────
+TOTP_ISSUER = "Vaal Vibes Admin"
+
+
+def generate_totp_secret() -> str:
+    return pyotp.random_base32()
+
+
+def totp_provisioning_uri(email: str, secret: str) -> str:
+    return pyotp.TOTP(secret).provisioning_uri(name=email, issuer_name=TOTP_ISSUER)
+
+
+def verify_totp(secret: str, code: str) -> bool:
+    if not secret or not code:
+        return False
+    cleaned = code.strip().replace(" ", "")
+    if not cleaned.isdigit():
+        return False
+    try:
+        return pyotp.TOTP(secret).verify(cleaned, valid_window=1)
+    except Exception:  # noqa: BLE001 — pyotp raises on malformed input
+        return False
+
+
+# ─── In-memory login rate limiter ────────────────────────────────────────────
+# Sliding window per (endpoint, client key). Lives in-process; sufficient for a
+# single-instance Railway deployment. If the venue ever scales out, swap this
+# for a Redis-backed limiter.
+_RATE_LIMIT_LOCK = threading.Lock()
+_RATE_LIMIT_BUCKETS: Dict[Tuple[str, str], Deque[float]] = {}
+
+
+def _client_key(request: Optional[Request]) -> str:
+    if request is None:
+        return "unknown"
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    if request.client and request.client.host:
+        return request.client.host
+    return "unknown"
+
+
+def enforce_rate_limit(request: Optional[Request], scope: str, max_attempts: int = 5, window_seconds: int = 300) -> None:
+    """Raise 429 if the caller has exceeded `max_attempts` in `window_seconds`.
+
+    Keyed by IP + endpoint scope so a flood on /admin/auth/login does not lock
+    out /auth/login for the same client.
+    """
+    key = (scope, _client_key(request))
+    now = datetime.now(timezone.utc).timestamp()
+    cutoff = now - window_seconds
+    with _RATE_LIMIT_LOCK:
+        bucket = _RATE_LIMIT_BUCKETS.setdefault(key, deque())
+        while bucket and bucket[0] < cutoff:
+            bucket.popleft()
+        if len(bucket) >= max_attempts:
+            retry_after = max(1, int(window_seconds - (now - bucket[0])))
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Too many attempts. Please wait a few minutes and try again.",
+                headers={"Retry-After": str(retry_after)},
+            )
+        bucket.append(now)
+
+
+def reset_rate_limit(request: Optional[Request], scope: str) -> None:
+    """Drop the failure counter on a successful auth — keeps honest users from
+    being throttled after a typo recovery."""
+    key = (scope, _client_key(request))
+    with _RATE_LIMIT_LOCK:
+        _RATE_LIMIT_BUCKETS.pop(key, None)
+
+
+# ─── Transactional email (Resend) ────────────────────────────────────────────
+def send_transactional_email(to: str, subject: str, html: str) -> bool:
+    """Send a transactional email via Resend. Returns True on success.
+
+    Logs and swallows errors — callers should not 500 because email delivery
+    failed; the underlying record is already persisted.
+    """
+    if not RESEND_API_KEY:
+        logging.getLogger(__name__).info(
+            "RESEND_API_KEY not configured — skipping email to %s (%s)", to, subject
+        )
+        return False
+    try:
+        resend.Emails.send(
+            {
+                "from": RESEND_FROM_EMAIL,
+                "to": [to],
+                "subject": subject,
+                "html": html,
+            }
+        )
+        return True
+    except Exception as exc:  # noqa: BLE001 — third-party SDK raises a variety of errors
+        logging.getLogger(__name__).warning("Resend send failed for %s: %s", to, exc)
+        return False
+
+
+def render_birthday_confirmation_email(
+    full_name: str,
+    reference_id: str,
+    celebration_date: datetime,
+    arrival_time: str,
+    guest_count: int,
+    seating_preference: str,
+    bottle_service: bool,
+) -> Tuple[str, str]:
+    pretty_date = celebration_date.strftime("%A, %d %B %Y")
+    subject = f"Vaal Vibes — birthday booking received ({reference_id})"
+    html = f"""
+      <div style="font-family:Inter,Arial,sans-serif;max-width:560px;margin:0 auto;color:#111;">
+        <h1 style="font-size:22px;margin:0 0 12px;">Happy birthday plans incoming, {full_name}!</h1>
+        <p>We've received your birthday booking request. The Vaal Vibes team will reach out within 24 hours to confirm the booth, bottle, and food setup.</p>
+        <table style="border-collapse:collapse;margin:16px 0;font-size:14px;">
+          <tr><td style="padding:4px 12px 4px 0;color:#666;">Reference</td><td><strong>{reference_id}</strong></td></tr>
+          <tr><td style="padding:4px 12px 4px 0;color:#666;">Celebration date</td><td>{pretty_date}</td></tr>
+          <tr><td style="padding:4px 12px 4px 0;color:#666;">Arrival time</td><td>{arrival_time}</td></tr>
+          <tr><td style="padding:4px 12px 4px 0;color:#666;">Guests</td><td>{guest_count}</td></tr>
+          <tr><td style="padding:4px 12px 4px 0;color:#666;">Seating</td><td>{seating_preference}</td></tr>
+          <tr><td style="padding:4px 12px 4px 0;color:#666;">Bottle service</td><td>{'Yes' if bottle_service else 'No'}</td></tr>
+        </table>
+        <p style="font-size:13px;color:#666;">Quote your reference <strong>{reference_id}</strong> when you arrive at 16 Fraser Street, Vanderbijlpark.</p>
+        <p style="font-size:13px;color:#666;">— Vaal Vibes</p>
+      </div>
+    """.strip()
+    return subject, html
+
+
 def build_birthday_notes(payload: BirthdayBookingCreate) -> str:
     extras = [
         f"Birthday booking for {payload.full_name}",
@@ -891,7 +1038,8 @@ async def seed_database() -> None:
             "email": "super@vaalvibes.app",
             "password_hash": hash_password("VaalVibes!123"),
             "role": "super",
-            "demo_mfa_code": "246810",
+            "totp_secret": None,
+            "totp_enrolled": False,
             "created_at": now,
         },
         {
@@ -900,7 +1048,8 @@ async def seed_database() -> None:
             "email": "marketing@vaalvibes.app",
             "password_hash": hash_password("VaalVibes!123"),
             "role": "marketing",
-            "demo_mfa_code": "246810",
+            "totp_secret": None,
+            "totp_enrolled": False,
             "created_at": now,
         },
         {
@@ -909,7 +1058,8 @@ async def seed_database() -> None:
             "email": "promo@vaalvibes.app",
             "password_hash": hash_password("VaalVibes!123"),
             "role": "promo",
-            "demo_mfa_code": "246810",
+            "totp_secret": None,
+            "totp_enrolled": False,
             "created_at": now,
         },
     ]
@@ -1008,12 +1158,27 @@ async def create_birthday_request(payload: BirthdayBookingCreate) -> CustomerReq
         bottle_service=payload.bottle_service,
     )
     await db.requests.insert_one(request_doc.model_dump())
+
+    # Customer-facing confirmation is intentionally birthday-only — reservation
+    # and order-intent flows still rely on Formspree forwarding to the venue.
+    if payload.email:
+        subject, html = render_birthday_confirmation_email(
+            full_name=payload.full_name,
+            reference_id=request_doc.reference_id,
+            celebration_date=payload.celebration_date,
+            arrival_time=payload.arrival_time,
+            guest_count=payload.guest_count,
+            seating_preference=payload.seating_preference,
+            bottle_service=payload.bottle_service,
+        )
+        send_transactional_email(payload.email, subject, html)
     return request_doc
 
 
 # Customer auth and profile
 @api_router.post("/auth/register", response_model=AuthResponse)
-async def register_customer(payload: CustomerRegisterRequest) -> AuthResponse:
+async def register_customer(payload: CustomerRegisterRequest, request: Request) -> AuthResponse:
+    enforce_rate_limit(request, "auth.register", max_attempts=5, window_seconds=600)
     email = payload.email.strip().lower()
     existing = await db.customers.find_one({"email": email})
     if existing:
@@ -1048,11 +1213,13 @@ async def register_customer(payload: CustomerRegisterRequest) -> AuthResponse:
 
 
 @api_router.post("/auth/login", response_model=AuthResponse)
-async def login_customer(payload: CustomerLoginRequest) -> AuthResponse:
+async def login_customer(payload: CustomerLoginRequest, request: Request) -> AuthResponse:
+    enforce_rate_limit(request, "auth.login", max_attempts=8, window_seconds=300)
     email = payload.email.strip().lower()
     user = await db.customers.find_one({"email": email}, {"_id": 0})
     if not user or not verify_password(payload.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid credentials")
+    reset_rate_limit(request, "auth.login")
     if user["email"] == "guest@vaalvibes.app":
         active_demo_promo = await db.promo_codes.find_one({"user_id": user["id"], "status": "active"}, {"_id": 0})
         if not active_demo_promo:
@@ -1156,14 +1323,54 @@ async def get_customer_requests(current_user: dict = Depends(get_current_custome
 
 
 # Admin auth and views
-@api_router.post("/admin/auth/login", response_model=AuthResponse)
-async def admin_login(payload: AdminLoginRequest) -> AuthResponse:
+@api_router.post("/admin/auth/login")
+async def admin_login(payload: AdminLoginRequest, request: Request):
+    """Admin login with real TOTP MFA.
+
+    Flow:
+      1. Verify email + password.
+      2. If the admin has no TOTP secret yet, generate one and return a
+         provisioning URI for enrollment in an authenticator app — no token
+         is issued. The caller must re-submit with a valid OTP to complete
+         enrollment.
+      3. If the admin has a TOTP secret, require and verify the OTP. On
+         first successful verification, mark `totp_enrolled = true`.
+    """
+    enforce_rate_limit(request, "admin.login", max_attempts=5, window_seconds=300)
     email = payload.email.strip().lower()
     admin = await db.admin_users.find_one({"email": email}, {"_id": 0})
     if not admin or not verify_password(payload.password, admin["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid credentials")
-    if payload.otp != admin["demo_mfa_code"]:
+
+    secret = admin.get("totp_secret")
+
+    # First-time enrollment: provision a secret, return the URI, do not issue a token.
+    if not secret:
+        new_secret = generate_totp_secret()
+        await db.admin_users.update_one(
+            {"id": admin["id"]},
+            {"$set": {"totp_secret": new_secret, "totp_enrolled": False}},
+        )
+        if not payload.otp:
+            return AdminMfaSetupResponse(
+                provisioning_uri=totp_provisioning_uri(admin["email"], new_secret),
+                secret=new_secret,
+            )
+        # Caller already supplied an OTP — verify it against the freshly
+        # provisioned secret so a single round-trip can both enroll and sign in.
+        if not verify_totp(new_secret, payload.otp):
+            raise HTTPException(status_code=401, detail="Invalid MFA code")
+        secret = new_secret
+
+    elif not verify_totp(secret, payload.otp or ""):
         raise HTTPException(status_code=401, detail="Invalid MFA code")
+
+    if not admin.get("totp_enrolled"):
+        await db.admin_users.update_one(
+            {"id": admin["id"]}, {"$set": {"totp_enrolled": True}}
+        )
+
+    reset_rate_limit(request, "admin.login")
     token = create_token(admin["id"], admin["role"], admin["name"], admin["email"])
     return AuthResponse(
         access_token=token,
@@ -1171,7 +1378,6 @@ async def admin_login(payload: AdminLoginRequest) -> AuthResponse:
         user_id=admin["id"],
         name=admin["name"],
         email=admin["email"],
-        demo_mfa_code=admin["demo_mfa_code"],
     )
 
 
@@ -1179,7 +1385,37 @@ async def admin_login(payload: AdminLoginRequest) -> AuthResponse:
 async def admin_me(current_admin: dict = Depends(get_current_admin)) -> dict:
     safe_admin = dict(current_admin)
     safe_admin.pop("password_hash", None)
+    safe_admin.pop("totp_secret", None)  # never leak the TOTP seed
     return safe_admin
+
+
+class AdminMfaResetRequest(BaseModel):
+    target_admin_id: str
+
+
+@api_router.post("/admin/auth/mfa/reset", response_model=MessageResponse)
+async def admin_reset_mfa(
+    payload: AdminMfaResetRequest, current_admin: dict = Depends(get_current_admin)
+) -> MessageResponse:
+    """Super-admin only: clear another admin's TOTP secret so they can re-enroll
+    (e.g. after losing their authenticator device)."""
+    if current_admin.get("role") != "super":
+        raise HTTPException(status_code=403, detail="Super admin role required")
+    target = await db.admin_users.find_one({"id": payload.target_admin_id}, {"_id": 0})
+    if not target:
+        raise HTTPException(status_code=404, detail="Admin not found")
+    await db.admin_users.update_one(
+        {"id": payload.target_admin_id},
+        {"$set": {"totp_secret": None, "totp_enrolled": False}},
+    )
+    await append_audit_log(
+        current_admin,
+        "reset-mfa",
+        "admin_user",
+        payload.target_admin_id,
+        f"Reset TOTP enrollment for {target.get('email')}",
+    )
+    return MessageResponse(message="MFA enrollment reset.")
 
 
 @api_router.get("/admin/dashboard", response_model=DashboardResponse)

@@ -2137,19 +2137,39 @@ function AdminLoginPage({ onLogin }) {
     password: "",
     otp: "",
   });
+  const [mfaSetup, setMfaSetup] = useState(null);
 
   const submit = async (event) => {
     event.preventDefault();
     setSubmitting(true);
     try {
       const response = await api.post("/admin/auth/login", formState);
-      onLogin(response.data);
-      toast.success("Admin access granted.");
-      navigate("/admin");
+      if (response.data?.mfa_setup_required) {
+        setMfaSetup({
+          provisioning_uri: response.data.provisioning_uri,
+          secret: response.data.secret,
+          issuer: response.data.issuer,
+        });
+        toast.message("Add the secret to your authenticator app, then enter the 6-digit code below.");
+      } else {
+        onLogin(response.data);
+        toast.success("Admin access granted.");
+        navigate("/admin");
+      }
     } catch (error) {
       toast.error(error.response?.data?.detail || "Admin login failed.");
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const copySecret = async () => {
+    if (!mfaSetup?.secret) return;
+    try {
+      await navigator.clipboard.writeText(mfaSetup.secret);
+      toast.success("Secret copied.");
+    } catch (_err) {
+      toast.error("Could not copy. Select and copy manually.");
     }
   };
 
@@ -2162,6 +2182,46 @@ function AdminLoginPage({ onLogin }) {
           <CardDescription>Separate staff access for marketing, promo validation, and audit operations.</CardDescription>
         </CardHeader>
         <CardContent>
+          {mfaSetup && (
+            <div
+              className="mb-5 space-y-3 rounded-md border border-primary/30 bg-primary/5 p-4 text-sm text-white/85"
+              data-testid="admin-login-mfa-enrollment"
+            >
+              <p className="font-semibold text-white">Enroll your authenticator</p>
+              <p className="text-white/75">
+                Open Google Authenticator, Authy, or 1Password and add a new account using the secret below (or
+                tap the otpauth link on a phone). The next code from the app completes login.
+              </p>
+              <div className="space-y-1">
+                <p className="text-xs uppercase tracking-wide text-white/50">Manual entry secret</p>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 break-all rounded bg-black/40 px-2 py-1 font-mono text-xs text-primary">
+                    {mfaSetup.secret}
+                  </code>
+                  <Button type="button" variant="outline" className="h-8 px-3 text-xs" onClick={copySecret}>
+                    Copy
+                  </Button>
+                </div>
+                <p className="text-xs text-white/50">
+                  Issuer: {mfaSetup.issuer} · Account: {formState.email}
+                </p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-xs uppercase tracking-wide text-white/50">Or open on this device</p>
+                <a
+                  className="break-all text-xs text-primary underline"
+                  href={mfaSetup.provisioning_uri}
+                  rel="noreferrer"
+                >
+                  {mfaSetup.provisioning_uri}
+                </a>
+              </div>
+              <p className="text-xs text-white/50">
+                The secret is shown once and never leaves your browser. If you lose access, ask the super admin to
+                reset MFA enrollment.
+              </p>
+            </div>
+          )}
           <form className="space-y-4" onSubmit={submit}>
             <Field label="Admin email" testId="admin-login-email-input">
               <Input value={formState.email} onChange={(event) => setFormState((current) => ({ ...current, email: event.target.value }))} />
@@ -2169,11 +2229,18 @@ function AdminLoginPage({ onLogin }) {
             <Field label="Password" testId="admin-login-password-input">
               <Input type="password" value={formState.password} onChange={(event) => setFormState((current) => ({ ...current, password: event.target.value }))} />
             </Field>
-            <Field label="MFA code" testId="admin-login-otp-input">
-              <Input value={formState.otp} onChange={(event) => setFormState((current) => ({ ...current, otp: event.target.value }))} />
+            <Field label={mfaSetup ? "Authenticator code (6 digits)" : "MFA code"} testId="admin-login-otp-input">
+              <Input
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                maxLength={6}
+                placeholder={mfaSetup ? "First code from your authenticator app" : "Leave blank if enrolling for the first time"}
+                value={formState.otp}
+                onChange={(event) => setFormState((current) => ({ ...current, otp: event.target.value }))}
+              />
             </Field>
             <Button type="submit" className="h-12 w-full" disabled={submitting} data-testid="admin-login-submit-button">
-              {submitting ? "Signing in..." : "Enter console"}
+              {submitting ? "Signing in..." : mfaSetup ? "Verify & enter console" : "Enter console"}
             </Button>
           </form>
         </CardContent>

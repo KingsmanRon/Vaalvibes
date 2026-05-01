@@ -156,13 +156,23 @@ JWT access tokens expire after 7 days (`ACCESS_TOKEN_MINUTES = 60 * 24 * 7`).
 - Log in at `/admin/login`.
 - The first run of the backend calls `seed_database()` and inserts three default admins (passwords are hashed at seed time):
 
-| Role | Email | Password (seed) | Demo OTP |
-|------|-------|-----------------|----------|
-| `super` | `super@vaalvibes.app` | `VaalVibes!123` | `246810` |
-| `marketing` | `marketing@vaalvibes.app` | `VaalVibes!123` | `246810` |
-| `promo` | `promo@vaalvibes.app` | `VaalVibes!123` | `246810` |
+| Role | Email | Password (seed) |
+|------|-------|-----------------|
+| `super` | `super@vaalvibes.app` | `VaalVibes!123` |
+| `marketing` | `marketing@vaalvibes.app` | `VaalVibes!123` |
+| `promo` | `promo@vaalvibes.app` | `VaalVibes!123` |
 
-> The OTP step is currently a fixed demo code (`demo_mfa_code`). Rotate the seed password and replace the demo MFA flow with TOTP before opening the admin to a wider team (see "Future work").
+> Rotate the seed passwords before going live.
+
+#### Admin MFA (TOTP) enrollment
+
+Admin login uses real RFC 6238 TOTP (Google Authenticator, Authy, 1Password, etc.). On the very first login an admin submits email + password and leaves the MFA field blank — the server provisions a TOTP secret and the UI displays a one-time secret + provisioning URI for the admin to scan or paste into their authenticator app. The next code from the app completes login and marks the account as enrolled.
+
+If an admin loses their authenticator, a `super` admin can clear the enrollment via `POST /api/admin/auth/mfa/reset` (`{ "target_admin_id": "..." }`); the next login starts a fresh enrollment.
+
+#### Login rate limiting
+
+Both `POST /api/auth/login` (customer) and `POST /api/admin/auth/login` are throttled per client IP with an in-memory sliding window. Defaults: 8 customer attempts / 5 min, 5 admin attempts / 5 min, 5 customer registrations / 10 min. Successful logins reset the counter so a typo recovery doesn't lock out the user. The buckets are in-process — for multi-instance deployments swap in a Redis-backed limiter.
 
 ---
 
@@ -233,7 +243,7 @@ Until those steps are done, the dispatch endpoint will continue to run in mock-o
 - **Seed is structural bootstrap only.** `seed_database()` runs once against an empty DB and inserts only what the app needs to *function*: admin logins, the welcome promo pool, and the canonical menu. Operational content — events, specials, campaigns — is **not seeded**; it lives entirely in MongoDB and is managed via `/admin/*` routes. A redeploy never overwrites or re-creates these.
 - **Menu is data-driven.** `/admin/menu` is the canonical place to add or reprice items. Code changes are not required for new prices, items, or categories. To bulk-restore the canonical menu, use `/admin/menu` → "Reset to default prices" (calls `POST /admin/menu/sync-defaults`, which re-inserts the contents of `default_menu_categories()` in `backend/server.py`).
 - **Gallery photos use Google Drive file IDs.** The Drive folder pointed at by `REACT_APP_POSTERS_FOLDER_URL` must be set to "Anyone with the link can view" so the SPA can hot-link the images.
-- **Campaign dispatch falls back to mock mode** when `RESEND_API_KEY` is unset. Real email only sends once the key is configured and the domain is verified.
+- **Campaign dispatch falls back to mock mode** when `RESEND_API_KEY` is unset. Real email only sends once the key is configured and the domain is verified. **Birthday booking confirmation emails** use the same Resend pipeline — they are sent automatically to the requester when `RESEND_API_KEY` is set, and silently skipped (with a log line) when it isn't. Reservation and order-intent flows do not send a customer-facing confirmation; they continue to rely on Formspree forwarding.
 - **JWTs are 7-day tokens.** Customers and admins will be logged out roughly weekly; rotate `APP_JWT_SECRET` to force-revoke all sessions.
 - **Promo codes are HMAC-signed** with `PROMO_SIGNING_SECRET`. Rotating that secret invalidates every outstanding code.
 - **CORS** is driven by `CORS_ORIGINS`; new frontend origins (preview deploys, custom domains) must be added explicitly.
@@ -242,8 +252,8 @@ Until those steps are done, the dispatch endpoint will continue to run in mock-o
 
 ## Future work / known limitations
 
-- Replace the demo OTP (`demo_mfa_code = 246810`) with real TOTP for admin login.
-- Automated reservation follow-ups (confirmation + reminder emails).
+- Automated reservation follow-ups (confirmation + reminder emails). Birthday confirmation emails ship today; reservation and order-intent flows still rely on Formspree only.
+- Move the in-memory login rate limiter to Redis once the backend scales beyond a single instance.
 - Storage usage / quota dashboard for gallery and Drive contents.
 - Audience segmentation for campaigns (currently broadcast-only).
 - Split `backend/server.py` and `frontend/src/App.js` into modules once the surface area stabilises.
