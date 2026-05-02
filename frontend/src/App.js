@@ -197,19 +197,38 @@ const buildIsoDateTime = (date, timeValue) => {
   return safeDate.toISOString();
 };
 
+const sortEventsByDate = (events) => {
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  const upcoming = [];
+  const past = [];
+  (events || []).forEach((event) => {
+    const eventDate = new Date(event.date);
+    if (Number.isNaN(eventDate.getTime()) || eventDate >= startOfToday) {
+      upcoming.push(event);
+    } else {
+      past.push(event);
+    }
+  });
+  upcoming.sort((a, b) => new Date(a.date) - new Date(b.date));
+  past.sort((a, b) => new Date(b.date) - new Date(a.date));
+  return [...upcoming, ...past];
+};
+
 const getEventFilter = (events, filter) => {
+  const sorted = sortEventsByDate(events);
   const now = new Date();
   if (filter === "all") {
-    return events;
+    return sorted;
   }
   if (filter === "week") {
     const limit = new Date();
     limit.setDate(now.getDate() + 7);
-    return events.filter((event) => new Date(event.date) <= limit);
+    return sorted.filter((event) => new Date(event.date) <= limit);
   }
   const monthLimit = new Date();
   monthLimit.setMonth(now.getMonth() + 1);
-  return events.filter((event) => new Date(event.date) <= monthLimit);
+  return sorted.filter((event) => new Date(event.date) <= monthLimit);
 };
 
 const getSpecialFeatureImage = (special) => {
@@ -1027,7 +1046,7 @@ function HomePage({ bootstrap, loading, error, onOpenRequest, onOpenSpecial }) {
       <section>
         <SectionHeading eyebrow="Line-up" title="Upcoming events" description="Request a booking, RSVP intent, or booth reservation before the venue fills up." />
         <div className="space-y-4">
-          {bootstrap.events.map((event) => (
+          {sortEventsByDate(bootstrap.events).map((event) => (
             <Card key={event.id} className="overflow-hidden border-white/10 bg-card transition-colors hover:border-primary/35" data-testid="event-card">
               <div className="grid gap-4 md:grid-cols-[200px_1fr]">
                 <div className="flex items-center justify-center bg-black/40">
