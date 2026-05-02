@@ -1344,23 +1344,24 @@ async def admin_login(payload: AdminLoginRequest, request: Request):
 
     secret = admin.get("totp_secret")
 
-    # First-time enrollment: provision a secret, return the URI, do not issue a token.
-    if not secret:
-        new_secret = generate_totp_secret()
-        await db.admin_users.update_one(
-            {"id": admin["id"]},
-            {"$set": {"totp_secret": new_secret, "totp_enrolled": False}},
-        )
+    # Enrollment path: triggered when the admin has never completed TOTP setup.
+    # Covers both fresh admins (no secret yet) and legacy admins migrated with
+    # a pre-seeded secret but `totp_enrolled = false` — the latter would
+    # otherwise be locked out because no authenticator holds the seeded secret.
+    if not admin.get("totp_enrolled"):
+        if not secret:
+            secret = generate_totp_secret()
+            await db.admin_users.update_one(
+                {"id": admin["id"]},
+                {"$set": {"totp_secret": secret, "totp_enrolled": False}},
+            )
         if not payload.otp:
             return AdminMfaSetupResponse(
-                provisioning_uri=totp_provisioning_uri(admin["email"], new_secret),
-                secret=new_secret,
+                provisioning_uri=totp_provisioning_uri(admin["email"], secret),
+                secret=secret,
             )
-        # Caller already supplied an OTP — verify it against the freshly
-        # provisioned secret so a single round-trip can both enroll and sign in.
-        if not verify_totp(new_secret, payload.otp):
+        if not verify_totp(secret, payload.otp):
             raise HTTPException(status_code=401, detail="Invalid MFA code")
-        secret = new_secret
 
     elif not verify_totp(secret, payload.otp or ""):
         raise HTTPException(status_code=401, detail="Invalid MFA code")
