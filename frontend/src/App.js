@@ -90,6 +90,7 @@ const CUSTOMER_USER_KEY = "vv-customer-user";
 const ADMIN_TOKEN_KEY = "vv-admin-token";
 const ADMIN_USER_KEY = "vv-admin-user";
 const BOOTSTRAP_CACHE_KEY = "vv-bootstrap-cache";
+const SEEN_REQUEST_STATUS_KEY = "vv-seen-request-status";
 const HERO_IMAGE = "/vibes.jpeg";
 const HUNGRY_PLATTER_IMAGE = "/vv-hungry-platter.jpg";
 const BOTTLE_BOOTH_IMAGE = "/DSC_0697 (1).jpg";
@@ -123,6 +124,7 @@ const requestSeed = {
 
 const adminLinks = [
   { to: "/admin", label: "Dashboard", icon: LayoutDashboard },
+  { to: "/admin/requests", label: "Reservations", icon: ClipboardCheck },
   { to: "/admin/events", label: "Events", icon: CalendarDays },
   { to: "/admin/specials", label: "Specials", icon: UtensilsCrossed },
   { to: "/admin/menu", label: "Menu", icon: BookOpen },
@@ -276,6 +278,7 @@ function AppShell() {
   const [customerProfile, setCustomerProfile] = useState(null);
   const [wallet, setWallet] = useState([]);
   const [customerRequests, setCustomerRequests] = useState([]);
+  const [seenRequestStatus, setSeenRequestStatus] = useState(() => readStorage(SEEN_REQUEST_STATUS_KEY, {}));
   const [customerLoading, setCustomerLoading] = useState(false);
   const [adminToken, setAdminToken] = useState(() => localStorage.getItem(ADMIN_TOKEN_KEY) || "");
   const [adminUser, setAdminUser] = useState(() => readStorage(ADMIN_USER_KEY, null));
@@ -329,7 +332,9 @@ function AppShell() {
   const logoutCustomer = useCallback((silent = false) => {
     setCustomerToken("");
     setCustomerUser(null);
+    setSeenRequestStatus({});
     removeStorage(CUSTOMER_USER_KEY);
+    removeStorage(SEEN_REQUEST_STATUS_KEY);
     localStorage.removeItem(CUSTOMER_TOKEN_KEY);
     if (!silent) {
       toast.success("Customer session closed.");
@@ -443,6 +448,57 @@ function AppShell() {
   useEffect(() => {
     loadCustomerData();
   }, [loadCustomerData]);
+
+  useEffect(() => {
+    if (!customerToken) return undefined;
+    const interval = setInterval(() => {
+      loadCustomerData(customerToken);
+    }, 90000);
+    return () => clearInterval(interval);
+  }, [customerToken, loadCustomerData]);
+
+  useEffect(() => {
+    writeStorage(SEEN_REQUEST_STATUS_KEY, seenRequestStatus);
+  }, [seenRequestStatus]);
+
+  useEffect(() => {
+    if (!customerToken || !customerRequests.length) return;
+    setSeenRequestStatus((current) => {
+      if (Object.keys(current).length === 0) {
+        const snapshot = {};
+        customerRequests.forEach((request) => {
+          snapshot[request.id] = request.status;
+        });
+        return snapshot;
+      }
+      const updated = { ...current };
+      let changed = false;
+      customerRequests.forEach((request) => {
+        if (!(request.id in updated) && request.status === "pending") {
+          updated[request.id] = request.status;
+          changed = true;
+        }
+      });
+      return changed ? updated : current;
+    });
+  }, [customerToken, customerRequests]);
+
+  const unseenRequests = useMemo(() => {
+    if (!customerToken) return [];
+    return (customerRequests || []).filter((request) => {
+      const seen = seenRequestStatus[request.id];
+      if (seen === undefined) return request.status !== "pending";
+      return seen !== request.status;
+    });
+  }, [customerToken, customerRequests, seenRequestStatus]);
+
+  const markRequestsSeen = useCallback(() => {
+    const snapshot = {};
+    customerRequests.forEach((request) => {
+      snapshot[request.id] = request.status;
+    });
+    setSeenRequestStatus(snapshot);
+  }, [customerRequests]);
 
   useEffect(() => {
     loadAdminData();
@@ -568,6 +624,16 @@ function AppShell() {
               }
             />
             <Route
+              path="/admin/requests"
+              element={
+                adminToken ? (
+                  <AdminRequestsPage token={adminToken} requests={adminRequests} loading={adminLoading} refresh={loadAdminData} />
+                ) : (
+                  <Navigate to="/admin/login" replace />
+                )
+              }
+            />
+            <Route
               path="/admin/events"
               element={
                 adminToken ? (
@@ -646,7 +712,14 @@ function AppShell() {
     <div className="min-h-screen bg-background text-foreground">
       <Toaster position="top-right" visibleToasts={3} closeButton />
       {isOffline && <OfflineBanner />}
-      <CustomerFrame customerUser={customerUser} theme={theme} setTheme={setTheme} logoutCustomer={logoutCustomer}>
+      <CustomerFrame
+        customerUser={customerUser}
+        theme={theme}
+        setTheme={setTheme}
+        logoutCustomer={logoutCustomer}
+        unseenRequests={unseenRequests}
+        onMarkRequestsSeen={markRequestsSeen}
+      >
         <Routes>
           <Route
             path="/"
@@ -768,13 +841,16 @@ function OfflineBanner() {
   );
 }
 
-function CustomerFrame({ children, customerUser, theme, setTheme, logoutCustomer }) {
+function CustomerFrame({ children, customerUser, theme, setTheme, logoutCustomer, unseenRequests = [], onMarkRequestsSeen }) {
   return (
     <div className="pb-28">
       <header className="sticky top-0 z-[120] border-b border-white/5 bg-background/85 backdrop-blur-xl">
         <div className="mx-auto flex max-w-[560px] items-center justify-between gap-4 px-4 py-4 sm:px-6">
           <BrandBadge />
           <div className="flex items-center gap-2">
+            {customerUser && (
+              <NotificationsBell unseenRequests={unseenRequests} onMarkRequestsSeen={onMarkRequestsSeen} />
+            )}
             {customerUser ? (
               <Button
                 variant="ghost"
@@ -797,6 +873,106 @@ function CustomerFrame({ children, customerUser, theme, setTheme, logoutCustomer
       <main className="mx-auto max-w-[560px] px-4 py-6 sm:px-6">{children}</main>
       <CustomerBottomNav />
     </div>
+  );
+}
+
+function NotificationsBell({ unseenRequests, onMarkRequestsSeen }) {
+  const [open, setOpen] = useState(false);
+  const count = unseenRequests.length;
+
+  const handleOpenChange = (next) => {
+    setOpen(next);
+  };
+
+  const handleMarkRead = () => {
+    if (onMarkRequestsSeen) onMarkRequestsSeen();
+    setOpen(false);
+  };
+
+  const statusCopy = (status) => {
+    switch (status) {
+      case "confirmed":
+        return { label: "Confirmed", className: "border-emerald-400/30 bg-emerald-400/10 text-emerald-300" };
+      case "cancelled":
+        return { label: "Declined", className: "border-destructive/30 bg-destructive/10 text-destructive" };
+      case "completed":
+        return { label: "Completed", className: "border-white/10 bg-white/5 text-white/70" };
+      default:
+        return { label: status, className: "border-amber-400/30 bg-amber-400/10 text-amber-300" };
+    }
+  };
+
+  return (
+    <Popover open={open} onOpenChange={handleOpenChange}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="relative h-11 w-11 rounded-full bg-white/5 hover:bg-white/10"
+          data-testid="customer-notifications-bell"
+          aria-label={count > 0 ? `${count} new booking update${count === 1 ? "" : "s"}` : "Notifications"}
+        >
+          <BellRing className="h-4 w-4" />
+          {count > 0 && (
+            <span
+              className="absolute -right-0.5 -top-0.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold text-primary-foreground"
+              data-testid="customer-notifications-badge"
+            >
+              {count > 9 ? "9+" : count}
+            </span>
+          )}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="end"
+        className="w-[320px] border-white/10 bg-card p-0"
+        data-testid="customer-notifications-popover"
+      >
+        <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+          <p className="text-sm font-medium text-white">Booking updates</p>
+          {count > 0 && (
+            <button
+              type="button"
+              onClick={handleMarkRead}
+              className="text-xs text-primary hover:underline"
+              data-testid="customer-notifications-mark-read"
+            >
+              Mark all read
+            </button>
+          )}
+        </div>
+        {count === 0 ? (
+          <div className="px-4 py-6 text-center text-sm text-muted-foreground" data-testid="customer-notifications-empty">
+            You're all caught up.
+          </div>
+        ) : (
+          <div className="max-h-80 overflow-y-auto">
+            {unseenRequests.map((request) => {
+              const copy = statusCopy(request.status);
+              return (
+                <Link
+                  key={request.id}
+                  to="/profile"
+                  onClick={handleMarkRead}
+                  className="flex items-start gap-3 border-b border-white/5 px-4 py-3 last:border-b-0 hover:bg-white/5"
+                  data-testid={`customer-notification-item-${request.id}`}
+                >
+                  <Badge className={copy.className}>{copy.label}</Badge>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm text-white">
+                      Booking {request.reference_id}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {formatDateTime(request.date)}
+                    </p>
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+        )}
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -4109,6 +4285,572 @@ function AdminUsersPage({ users, loading }) {
           </ScrollArea>
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+const requestStatusOptions = [
+  { value: "pending", label: "Pending" },
+  { value: "confirmed", label: "Confirmed" },
+  { value: "completed", label: "Completed" },
+  { value: "cancelled", label: "Cancelled" },
+];
+
+const requestTypeOptions = [
+  { value: "all", label: "All types" },
+  { value: "reservation", label: "Reservation" },
+  { value: "order-intent", label: "Order intent" },
+  { value: "birthday-booking", label: "Birthday booking" },
+];
+
+const requestStatusBadgeClass = (status) => {
+  switch (status) {
+    case "confirmed":
+      return "border-emerald-400/30 bg-emerald-400/10 text-emerald-300";
+    case "completed":
+      return "border-white/10 bg-white/5 text-white/70";
+    case "cancelled":
+      return "border-destructive/30 bg-destructive/10 text-destructive";
+    case "pending":
+    default:
+      return "border-amber-400/30 bg-amber-400/10 text-amber-300";
+  }
+};
+
+function AdminRequestsPage({ token, requests, loading, refresh }) {
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [typeFilter, setTypeFilter] = useState("all");
+  const [editingRequest, setEditingRequest] = useState(null);
+  const [editForm, setEditForm] = useState(null);
+  const [viewingRequest, setViewingRequest] = useState(null);
+  const [statusAction, setStatusAction] = useState(null);
+  const [actionNote, setActionNote] = useState("");
+  const [notifyCustomer, setNotifyCustomer] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [notifyTarget, setNotifyTarget] = useState(null);
+  const [notifyMessage, setNotifyMessage] = useState("");
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return (requests || []).filter((request) => {
+      if (statusFilter !== "all" && request.status !== statusFilter) return false;
+      if (typeFilter !== "all" && request.request_type !== typeFilter) return false;
+      if (!q) return true;
+      const haystack = [
+        request.reference_id,
+        request.customer_name,
+        request.customer_email,
+        request.contact_phone,
+        request.notes,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(q);
+    });
+  }, [requests, query, statusFilter, typeFilter]);
+
+  const openEdit = (request) => {
+    const date = new Date(request.date);
+    setEditingRequest(request);
+    setEditForm({
+      date,
+      time: `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`,
+      guest_count: request.guest_count,
+      notes: request.notes || "",
+      arrival_time: request.arrival_time || "",
+      contact_phone: request.contact_phone || "",
+      seating_preference: request.seating_preference || "",
+    });
+  };
+
+  const closeEdit = () => {
+    setEditingRequest(null);
+    setEditForm(null);
+  };
+
+  const saveEdit = async () => {
+    if (!editingRequest || !editForm) return;
+    const payload = {
+      date: buildIsoDateTime(editForm.date, editForm.time),
+      guest_count: Number(editForm.guest_count) || editingRequest.guest_count,
+      notes: editForm.notes,
+      arrival_time: editForm.arrival_time || null,
+      contact_phone: editForm.contact_phone,
+      seating_preference: editForm.seating_preference || null,
+    };
+    setSubmitting(true);
+    try {
+      await api.put(`/admin/requests/${editingRequest.id}`, payload, authConfig(token));
+      toast.success("Request updated.");
+      closeEdit();
+      refresh(token);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Could not update the request.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const openStatus = (request, status) => {
+    setStatusAction({ request, status });
+    setActionNote("");
+    setNotifyCustomer(Boolean(request.customer_email));
+  };
+
+  const confirmStatus = async () => {
+    if (!statusAction) return;
+    setSubmitting(true);
+    try {
+      await api.patch(
+        `/admin/requests/${statusAction.request.id}`,
+        {
+          status: statusAction.status,
+          admin_note: actionNote,
+          notify_customer: notifyCustomer && Boolean(statusAction.request.customer_email),
+        },
+        authConfig(token),
+      );
+      toast.success(`Request marked ${statusAction.status}.`);
+      setStatusAction(null);
+      setActionNote("");
+      refresh(token);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Could not update status.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const deleteRequest = async (request) => {
+    try {
+      await api.delete(`/admin/requests/${request.id}`, authConfig(token));
+      toast.success("Request deleted.");
+      refresh(token);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Could not delete the request.");
+    }
+  };
+
+  const openNotify = (request) => {
+    setNotifyTarget(request);
+    setNotifyMessage("");
+  };
+
+  const sendNotify = async () => {
+    if (!notifyTarget) return;
+    const trimmed = notifyMessage.trim();
+    if (!trimmed) {
+      toast.error("Message cannot be empty.");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const response = await api.post(
+        `/admin/requests/${notifyTarget.id}/notify`,
+        { message: trimmed },
+        authConfig(token),
+      );
+      toast.success(response.data?.message || "Notification sent.");
+      setNotifyTarget(null);
+      setNotifyMessage("");
+      refresh(token);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Could not send notification.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (loading) {
+    return <SkeletonPanel />;
+  }
+
+  return (
+    <div className="space-y-6" data-testid="admin-requests-page">
+      <SectionHeading
+        eyebrow="Operations"
+        title="Reservations & bookings"
+        description="Review incoming reservations, birthday bookings, and order intents. Approve, reject, edit, or message the customer directly."
+      />
+
+      <Card className="border-white/10 bg-card">
+        <CardContent className="grid gap-3 p-4 md:grid-cols-[1fr_180px_180px]">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              className="pl-10"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search reference, name, email, phone, notes"
+              data-testid="requests-search-input"
+            />
+          </div>
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger data-testid="requests-status-filter"><SelectValue placeholder="Status" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All statuses</SelectItem>
+              {requestStatusOptions.map((option) => (
+                <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={typeFilter} onValueChange={setTypeFilter}>
+            <SelectTrigger data-testid="requests-type-filter"><SelectValue placeholder="Type" /></SelectTrigger>
+            <SelectContent>
+              {requestTypeOptions.map((option) => (
+                <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </CardContent>
+      </Card>
+
+      {filtered.length === 0 ? (
+        <EmptyState
+          title="No reservations match these filters"
+          body="Adjust the filters above, or wait for new bookings to come in from the customer site."
+        />
+      ) : (
+        <Card className="border-white/10 bg-card">
+          <CardContent className="p-0">
+            <ScrollArea className="w-full">
+              <Table data-testid="admin-requests-table">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Reference</TableHead>
+                    <TableHead>Customer</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Guests</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filtered.map((request) => (
+                    <TableRow key={request.id} data-testid={`admin-request-row-${request.id}`}>
+                      <TableCell className="font-medium text-white">{request.reference_id}</TableCell>
+                      <TableCell>
+                        <div className="flex flex-col">
+                          <span className="text-white">{request.customer_name || "Guest"}</span>
+                          <span className="text-xs text-muted-foreground">{request.customer_email || request.contact_phone || "—"}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="capitalize">{request.request_type.replace("-", " ")}</TableCell>
+                      <TableCell>{formatDateTime(request.date)}</TableCell>
+                      <TableCell>{request.guest_count}</TableCell>
+                      <TableCell>
+                        <Badge className={requestStatusBadgeClass(request.status)}>{request.status}</Badge>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex flex-wrap justify-end gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="border-white/10 bg-transparent text-white hover:bg-white/5"
+                            onClick={() => setViewingRequest(request)}
+                            data-testid={`request-view-${request.id}`}
+                          >
+                            View
+                          </Button>
+                          {request.status !== "confirmed" && request.status !== "completed" && (
+                            <Button
+                              size="sm"
+                              className="bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30"
+                              onClick={() => openStatus(request, "confirmed")}
+                              data-testid={`request-approve-${request.id}`}
+                            >
+                              <Check className="mr-1 h-3.5 w-3.5" />Approve
+                            </Button>
+                          )}
+                          {request.status !== "cancelled" && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="border-destructive/30 bg-transparent text-destructive hover:bg-destructive/10"
+                              onClick={() => openStatus(request, "cancelled")}
+                              data-testid={`request-reject-${request.id}`}
+                            >
+                              Reject
+                            </Button>
+                          )}
+                          {request.status === "confirmed" && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="border-white/10 bg-transparent text-white hover:bg-white/5"
+                              onClick={() => openStatus(request, "completed")}
+                              data-testid={`request-complete-${request.id}`}
+                            >
+                              Complete
+                            </Button>
+                          )}
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="border-white/10 bg-transparent text-white hover:bg-white/5"
+                            onClick={() => openEdit(request)}
+                            data-testid={`request-edit-${request.id}`}
+                          >
+                            Edit
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="border-white/10 bg-transparent text-white hover:bg-white/5"
+                            onClick={() => openNotify(request)}
+                            disabled={!request.customer_email}
+                            data-testid={`request-notify-${request.id}`}
+                          >
+                            <BellRing className="mr-1 h-3.5 w-3.5" />Notify
+                          </Button>
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="border-destructive/30 bg-transparent text-destructive hover:bg-destructive/10"
+                                data-testid={`request-delete-${request.id}`}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent className="border-white/10 bg-card">
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Delete reservation {request.reference_id}?</AlertDialogTitle>
+                                <AlertDialogDescription>This permanently removes the request. Audit log will keep a record of the deletion.</AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction onClick={() => deleteRequest(request)}>Delete</AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </ScrollArea>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Status change dialog */}
+      <Dialog open={Boolean(statusAction)} onOpenChange={(open) => !open && setStatusAction(null)}>
+        <DialogContent className="border-white/10 bg-card">
+          <DialogHeader>
+            <DialogTitle>
+              {statusAction?.status === "confirmed" && "Approve reservation"}
+              {statusAction?.status === "cancelled" && "Reject reservation"}
+              {statusAction?.status === "completed" && "Mark reservation complete"}
+              {statusAction?.status === "pending" && "Move back to pending"}
+            </DialogTitle>
+            <DialogDescription>
+              Reference {statusAction?.request?.reference_id} — {statusAction?.request?.customer_name || "Guest"}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Field label="Admin note (optional, included in audit log and email)" testId="request-action-note-field">
+              <Textarea
+                rows={3}
+                value={actionNote}
+                onChange={(event) => setActionNote(event.target.value)}
+                placeholder={statusAction?.status === "cancelled" ? "Let the customer know why" : "Booth details, arrival instructions, etc."}
+                data-testid="request-action-note-input"
+              />
+            </Field>
+            {statusAction?.request?.customer_email ? (
+              <div className="flex items-center gap-3 rounded-lg border border-white/10 bg-black/20 p-3">
+                <Checkbox
+                  id="notify-customer"
+                  checked={notifyCustomer}
+                  onCheckedChange={(value) => setNotifyCustomer(Boolean(value))}
+                  data-testid="request-notify-toggle"
+                />
+                <Label htmlFor="notify-customer" className="text-sm text-white">
+                  Email customer at {statusAction.request.customer_email}
+                </Label>
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">No email on file — customer will not be notified automatically.</p>
+            )}
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" className="border-white/10 bg-transparent text-white hover:bg-white/5" onClick={() => setStatusAction(null)}>Cancel</Button>
+              <Button onClick={confirmStatus} disabled={submitting} data-testid="request-action-confirm">
+                {submitting ? "Working…" : "Confirm"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit drawer */}
+      <Sheet open={Boolean(editingRequest)} onOpenChange={(open) => !open && closeEdit()}>
+        <SheetContent className="w-full overflow-y-auto border-white/10 bg-background sm:max-w-md">
+          <SheetHeader>
+            <SheetTitle>Edit reservation {editingRequest?.reference_id}</SheetTitle>
+            <SheetDescription>Adjust the booking details. Customers are not auto-notified — use Notify after saving if needed.</SheetDescription>
+          </SheetHeader>
+          {editForm && (
+            <div className="mt-6 space-y-4">
+              <DatePickerField
+                label="Booking date"
+                value={editForm.date}
+                onChange={(date) => setEditForm((current) => ({ ...current, date }))}
+                testId="request-edit-date-picker"
+              />
+              <Field label="Time (24h)" testId="request-edit-time-field">
+                <Input
+                  value={editForm.time}
+                  onChange={(event) => setEditForm((current) => ({ ...current, time: event.target.value }))}
+                  data-testid="request-edit-time-input"
+                />
+              </Field>
+              <Field label="Arrival time (display copy)" testId="request-edit-arrival-field">
+                <Input
+                  value={editForm.arrival_time}
+                  onChange={(event) => setEditForm((current) => ({ ...current, arrival_time: event.target.value }))}
+                  placeholder="e.g. 19:30"
+                />
+              </Field>
+              <Field label="Guest count" testId="request-edit-guests-field">
+                <Input
+                  type="number"
+                  min={1}
+                  value={editForm.guest_count}
+                  onChange={(event) => setEditForm((current) => ({ ...current, guest_count: event.target.value }))}
+                />
+              </Field>
+              <Field label="Contact phone" testId="request-edit-phone-field">
+                <Input
+                  value={editForm.contact_phone}
+                  onChange={(event) => setEditForm((current) => ({ ...current, contact_phone: event.target.value }))}
+                />
+              </Field>
+              <Field label="Seating preference" testId="request-edit-seating-field">
+                <Select
+                  value={editForm.seating_preference || ""}
+                  onValueChange={(value) => setEditForm((current) => ({ ...current, seating_preference: value }))}
+                >
+                  <SelectTrigger><SelectValue placeholder="Pick a seating area" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="indoor">Indoor</SelectItem>
+                    <SelectItem value="patio">Patio</SelectItem>
+                    <SelectItem value="vip">VIP</SelectItem>
+                  </SelectContent>
+                </Select>
+              </Field>
+              <Field label="Notes" testId="request-edit-notes-field">
+                <Textarea
+                  rows={5}
+                  value={editForm.notes}
+                  onChange={(event) => setEditForm((current) => ({ ...current, notes: event.target.value }))}
+                />
+              </Field>
+              <Button className="w-full" onClick={saveEdit} disabled={submitting} data-testid="request-edit-save">
+                {submitting ? "Saving…" : "Save changes"}
+              </Button>
+            </div>
+          )}
+        </SheetContent>
+      </Sheet>
+
+      {/* Notify dialog */}
+      <Dialog open={Boolean(notifyTarget)} onOpenChange={(open) => !open && setNotifyTarget(null)}>
+        <DialogContent className="border-white/10 bg-card">
+          <DialogHeader>
+            <DialogTitle>Notify customer</DialogTitle>
+            <DialogDescription>
+              Send a message about reservation {notifyTarget?.reference_id} to {notifyTarget?.customer_email}.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Field label="Message" testId="request-notify-field">
+              <Textarea
+                rows={6}
+                value={notifyMessage}
+                onChange={(event) => setNotifyMessage(event.target.value)}
+                placeholder="Hi! Quick update about your booking…"
+                data-testid="request-notify-input"
+              />
+            </Field>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" className="border-white/10 bg-transparent text-white hover:bg-white/5" onClick={() => setNotifyTarget(null)}>Cancel</Button>
+              <Button onClick={sendNotify} disabled={submitting} data-testid="request-notify-send">
+                {submitting ? "Sending…" : "Send email"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* View details drawer */}
+      <Sheet open={Boolean(viewingRequest)} onOpenChange={(open) => !open && setViewingRequest(null)}>
+        <SheetContent className="w-full overflow-y-auto border-white/10 bg-background sm:max-w-md">
+          <SheetHeader>
+            <SheetTitle>Reservation {viewingRequest?.reference_id}</SheetTitle>
+            <SheetDescription>Full request payload received from the customer site.</SheetDescription>
+          </SheetHeader>
+          {viewingRequest && (
+            <div className="mt-6 space-y-4 text-sm">
+              <div className="flex items-center gap-2">
+                <Badge className={requestStatusBadgeClass(viewingRequest.status)}>{viewingRequest.status}</Badge>
+                <Badge className="border-primary/20 bg-primary/10 text-primary capitalize">{viewingRequest.request_type.replace("-", " ")}</Badge>
+              </div>
+              <div className="grid gap-2">
+                <DetailRow label="Customer" value={viewingRequest.customer_name || "Guest"} />
+                <DetailRow label="Email" value={viewingRequest.customer_email || "—"} />
+                <DetailRow label="Phone" value={viewingRequest.contact_phone || "—"} />
+                <DetailRow label="Date" value={formatDateTime(viewingRequest.date)} />
+                <DetailRow label="Guests" value={viewingRequest.guest_count} />
+                {viewingRequest.arrival_time && <DetailRow label="Arrival" value={viewingRequest.arrival_time} />}
+                {viewingRequest.seating_preference && <DetailRow label="Seating" value={viewingRequest.seating_preference} />}
+                {viewingRequest.occasion && <DetailRow label="Occasion" value={viewingRequest.occasion} />}
+                {viewingRequest.date_of_birth && <DetailRow label="DOB" value={viewingRequest.date_of_birth} />}
+                {typeof viewingRequest.bottle_service === "boolean" && (
+                  <DetailRow label="Bottle service" value={viewingRequest.bottle_service ? "Yes" : "No"} />
+                )}
+                {typeof viewingRequest.estimated_budget === "number" && (
+                  <DetailRow label="Budget" value={formatCurrency(viewingRequest.estimated_budget)} />
+                )}
+                <DetailRow label="Created" value={formatDateTime(viewingRequest.created_at)} />
+              </div>
+              {viewingRequest.notes && (
+                <div className="rounded-lg border border-white/10 bg-black/20 p-3">
+                  <p className="mb-1 text-xs uppercase tracking-wide text-muted-foreground">Notes</p>
+                  <p className="whitespace-pre-wrap text-white/90">{viewingRequest.notes}</p>
+                </div>
+              )}
+              {(viewingRequest.items || []).length > 0 && (
+                <div>
+                  <p className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">Items</p>
+                  <div className="space-y-2">
+                    {viewingRequest.items.map((item, idx) => (
+                      <div key={idx} className="flex items-center justify-between rounded-md border border-white/10 bg-black/20 p-2 text-xs">
+                        <span className="text-white">{item.name} × {item.quantity}</span>
+                        <span className="text-muted-foreground">{formatCurrency(item.price * item.quantity)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </SheetContent>
+      </Sheet>
+    </div>
+  );
+}
+
+function DetailRow({ label, value }) {
+  return (
+    <div className="flex items-start justify-between gap-3 border-b border-white/5 py-1.5">
+      <span className="text-xs uppercase tracking-wide text-muted-foreground">{label}</span>
+      <span className="text-right text-white/90">{value}</span>
     </div>
   );
 }
