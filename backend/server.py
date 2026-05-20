@@ -1,7 +1,7 @@
 from collections import deque
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Deque, Dict, List, Literal, Optional, Tuple
+from typing import Any, Deque, Dict, List, Literal, Optional, Tuple
 
 import hmac
 import logging
@@ -346,6 +346,25 @@ class CustomerRequest(BaseModel):
     bottle_service: Optional[bool] = None
 
 
+class RequestStatusUpdate(BaseModel):
+    status: Literal["pending", "confirmed", "completed", "cancelled"]
+    admin_note: str = ""
+    notify_customer: bool = True
+
+
+class RequestEditPayload(BaseModel):
+    date: Optional[datetime] = None
+    guest_count: Optional[int] = None
+    notes: Optional[str] = None
+    arrival_time: Optional[str] = None
+    contact_phone: Optional[str] = None
+    seating_preference: Optional[str] = None
+
+
+class RequestNotifyPayload(BaseModel):
+    message: str
+
+
 class Campaign(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     subject: str
@@ -639,6 +658,79 @@ def render_birthday_confirmation_email(
           <tr><td style="padding:4px 12px 4px 0;color:#666;">Bottle service</td><td>{'Yes' if bottle_service else 'No'}</td></tr>
         </table>
         <p style="font-size:13px;color:#666;">Quote your reference <strong>{reference_id}</strong> when you arrive at 16 Fraser Street, Vanderbijlpark.</p>
+        <p style="font-size:13px;color:#666;">— Vaal Vibes</p>
+      </div>
+    """.strip()
+    return subject, html
+
+
+def render_request_status_email(
+    customer_name: Optional[str],
+    reference_id: str,
+    request_type: str,
+    status_value: str,
+    date_value: datetime,
+    admin_note: str,
+) -> Tuple[str, str]:
+    status_copy = {
+        "confirmed": (
+            "Your booking is confirmed",
+            "Great news — we've confirmed your booking. The Vaal Vibes team is ready for you.",
+        ),
+        "cancelled": (
+            "Your booking could not be confirmed",
+            "Unfortunately we are unable to confirm this booking right now.",
+        ),
+        "completed": (
+            "Thanks for vibing with us",
+            "We've marked your booking as complete. Thanks for spending the moment at Vaal Vibes!",
+        ),
+        "pending": (
+            "Your booking is back in review",
+            "We've moved your booking back to pending review. The team will be in touch shortly.",
+        ),
+    }
+    headline, body = status_copy.get(status_value, ("Booking update", "There's an update on your booking."))
+    pretty_date = date_value.strftime("%A, %d %B %Y %H:%M")
+    pretty_type = request_type.replace("-", " ").title()
+    greeting = customer_name or "there"
+    note_block = (
+        f'<p style="margin:16px 0;padding:12px 16px;border-left:3px solid #f0c419;background:#1a1a1a;color:#eee;border-radius:6px;">'
+        f'<strong style="display:block;margin-bottom:4px;color:#f0c419;">A note from the team</strong>{admin_note}</p>'
+        if admin_note
+        else ""
+    )
+    subject = f"Vaal Vibes — {headline.lower()} ({reference_id})"
+    html = f"""
+      <div style="font-family:Inter,Arial,sans-serif;max-width:560px;margin:0 auto;color:#111;">
+        <h1 style="font-size:22px;margin:0 0 12px;">Hi {greeting},</h1>
+        <p>{body}</p>
+        <table style="border-collapse:collapse;margin:16px 0;font-size:14px;">
+          <tr><td style="padding:4px 12px 4px 0;color:#666;">Reference</td><td><strong>{reference_id}</strong></td></tr>
+          <tr><td style="padding:4px 12px 4px 0;color:#666;">Booking type</td><td>{pretty_type}</td></tr>
+          <tr><td style="padding:4px 12px 4px 0;color:#666;">Date</td><td>{pretty_date}</td></tr>
+          <tr><td style="padding:4px 12px 4px 0;color:#666;">Status</td><td><strong>{status_value.title()}</strong></td></tr>
+        </table>
+        {note_block}
+        <p style="font-size:13px;color:#666;">Quote reference <strong>{reference_id}</strong> when you arrive at 16 Fraser Street, Vanderbijlpark.</p>
+        <p style="font-size:13px;color:#666;">— Vaal Vibes</p>
+      </div>
+    """.strip()
+    return subject, html
+
+
+def render_request_message_email(
+    customer_name: Optional[str],
+    reference_id: str,
+    message: str,
+) -> Tuple[str, str]:
+    greeting = customer_name or "there"
+    subject = f"Vaal Vibes — update on your booking ({reference_id})"
+    html = f"""
+      <div style="font-family:Inter,Arial,sans-serif;max-width:560px;margin:0 auto;color:#111;">
+        <h1 style="font-size:22px;margin:0 0 12px;">Hi {greeting},</h1>
+        <p>Quick note from the Vaal Vibes team about booking <strong>{reference_id}</strong>:</p>
+        <div style="margin:16px 0;padding:16px;border-left:3px solid #f0c419;background:#1a1a1a;color:#eee;border-radius:6px;white-space:pre-wrap;">{message}</div>
         <p style="font-size:13px;color:#666;">— Vaal Vibes</p>
       </div>
     """.strip()
@@ -1907,7 +1999,120 @@ async def admin_list_promo_codes(current_admin: dict = Depends(get_current_admin
 
 @api_router.get("/admin/requests", response_model=List[CustomerRequest])
 async def admin_list_requests(current_admin: dict = Depends(get_current_admin)) -> List[CustomerRequest]:
-    return serialize_many(await db.requests.find({}, {"_id": 0}).sort("created_at", -1).to_list(length=100))
+    return serialize_many(await db.requests.find({}, {"_id": 0}).sort("created_at", -1).to_list(length=200))
+
+
+@api_router.patch("/admin/requests/{request_id}", response_model=CustomerRequest)
+async def admin_update_request_status(
+    request_id: str,
+    payload: RequestStatusUpdate,
+    current_admin: dict = Depends(get_current_admin),
+) -> CustomerRequest:
+    existing = await db.requests.find_one({"id": request_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Request not found")
+
+    update_doc: Dict[str, Any] = {"status": payload.status}
+    if payload.admin_note:
+        prior_notes = existing.get("notes", "") or ""
+        timestamp = now_utc().strftime("%Y-%m-%d %H:%M")
+        addition = f"[admin {timestamp}] {payload.admin_note}"
+        update_doc["notes"] = f"{prior_notes}\n{addition}".strip() if prior_notes else addition
+
+    await db.requests.update_one({"id": request_id}, {"$set": update_doc})
+    updated = serialize(await db.requests.find_one({"id": request_id}, {"_id": 0}))
+    if not updated:
+        raise HTTPException(status_code=404, detail="Request not found")
+
+    reference = updated.get("reference_id") or request_id
+    summary = f"Set request {reference} to {payload.status}"
+    if payload.admin_note:
+        summary = f"{summary} — {payload.admin_note[:120]}"
+    await append_audit_log(current_admin, "status-change", "request", request_id, summary)
+
+    if payload.notify_customer and updated.get("customer_email"):
+        subject, html = render_request_status_email(
+            customer_name=updated.get("customer_name"),
+            reference_id=reference,
+            request_type=updated.get("request_type", "reservation"),
+            status_value=payload.status,
+            date_value=updated["date"],
+            admin_note=payload.admin_note,
+        )
+        send_transactional_email(updated["customer_email"], subject, html)
+    return updated
+
+
+@api_router.put("/admin/requests/{request_id}", response_model=CustomerRequest)
+async def admin_edit_request(
+    request_id: str,
+    payload: RequestEditPayload,
+    current_admin: dict = Depends(get_current_admin),
+) -> CustomerRequest:
+    existing = await db.requests.find_one({"id": request_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Request not found")
+
+    changes = payload.model_dump(exclude_none=True)
+    if not changes:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    await db.requests.update_one({"id": request_id}, {"$set": changes})
+    updated = serialize(await db.requests.find_one({"id": request_id}, {"_id": 0}))
+    reference = updated.get("reference_id") or request_id
+    summary = f"Edited request {reference} ({', '.join(changes.keys())})"
+    await append_audit_log(current_admin, "update", "request", request_id, summary)
+    return updated
+
+
+@api_router.delete("/admin/requests/{request_id}", response_model=MessageResponse)
+async def admin_delete_request(
+    request_id: str,
+    current_admin: dict = Depends(get_current_admin),
+) -> MessageResponse:
+    existing = await db.requests.find_one({"id": request_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Request not found")
+    await db.requests.delete_one({"id": request_id})
+    reference = existing.get("reference_id") or request_id
+    await append_audit_log(
+        current_admin, "delete", "request", request_id, f"Deleted request {reference}"
+    )
+    return MessageResponse(message="Request deleted")
+
+
+@api_router.post("/admin/requests/{request_id}/notify", response_model=MessageResponse)
+async def admin_notify_request(
+    request_id: str,
+    payload: RequestNotifyPayload,
+    current_admin: dict = Depends(get_current_admin),
+) -> MessageResponse:
+    message = payload.message.strip()
+    if not message:
+        raise HTTPException(status_code=400, detail="Message is required")
+    existing = await db.requests.find_one({"id": request_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Request not found")
+    if not existing.get("customer_email"):
+        raise HTTPException(status_code=400, detail="Customer has no email on file")
+
+    reference = existing.get("reference_id") or request_id
+    subject, html = render_request_message_email(
+        customer_name=existing.get("customer_name"),
+        reference_id=reference,
+        message=message,
+    )
+    sent = send_transactional_email(existing["customer_email"], subject, html)
+    await append_audit_log(
+        current_admin,
+        "notify",
+        "request",
+        request_id,
+        f"Notified customer about {reference}: {message[:120]}",
+    )
+    return MessageResponse(
+        message="Notification sent" if sent else "Notification queued (email provider unavailable)"
+    )
 
 
 @api_router.get("/admin/users", response_model=List[CustomerSummary])
