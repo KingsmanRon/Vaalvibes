@@ -90,6 +90,7 @@ const CUSTOMER_USER_KEY = "vv-customer-user";
 const ADMIN_TOKEN_KEY = "vv-admin-token";
 const ADMIN_USER_KEY = "vv-admin-user";
 const BOOTSTRAP_CACHE_KEY = "vv-bootstrap-cache";
+const SEEN_REQUEST_STATUS_KEY = "vv-seen-request-status";
 const HERO_IMAGE = "/vibes.jpeg";
 const HUNGRY_PLATTER_IMAGE = "/vv-hungry-platter.jpg";
 const BOTTLE_BOOTH_IMAGE = "/DSC_0697 (1).jpg";
@@ -277,6 +278,7 @@ function AppShell() {
   const [customerProfile, setCustomerProfile] = useState(null);
   const [wallet, setWallet] = useState([]);
   const [customerRequests, setCustomerRequests] = useState([]);
+  const [seenRequestStatus, setSeenRequestStatus] = useState(() => readStorage(SEEN_REQUEST_STATUS_KEY, {}));
   const [customerLoading, setCustomerLoading] = useState(false);
   const [adminToken, setAdminToken] = useState(() => localStorage.getItem(ADMIN_TOKEN_KEY) || "");
   const [adminUser, setAdminUser] = useState(() => readStorage(ADMIN_USER_KEY, null));
@@ -330,7 +332,9 @@ function AppShell() {
   const logoutCustomer = useCallback((silent = false) => {
     setCustomerToken("");
     setCustomerUser(null);
+    setSeenRequestStatus({});
     removeStorage(CUSTOMER_USER_KEY);
+    removeStorage(SEEN_REQUEST_STATUS_KEY);
     localStorage.removeItem(CUSTOMER_TOKEN_KEY);
     if (!silent) {
       toast.success("Customer session closed.");
@@ -444,6 +448,57 @@ function AppShell() {
   useEffect(() => {
     loadCustomerData();
   }, [loadCustomerData]);
+
+  useEffect(() => {
+    if (!customerToken) return undefined;
+    const interval = setInterval(() => {
+      loadCustomerData(customerToken);
+    }, 90000);
+    return () => clearInterval(interval);
+  }, [customerToken, loadCustomerData]);
+
+  useEffect(() => {
+    writeStorage(SEEN_REQUEST_STATUS_KEY, seenRequestStatus);
+  }, [seenRequestStatus]);
+
+  useEffect(() => {
+    if (!customerToken || !customerRequests.length) return;
+    setSeenRequestStatus((current) => {
+      if (Object.keys(current).length === 0) {
+        const snapshot = {};
+        customerRequests.forEach((request) => {
+          snapshot[request.id] = request.status;
+        });
+        return snapshot;
+      }
+      const updated = { ...current };
+      let changed = false;
+      customerRequests.forEach((request) => {
+        if (!(request.id in updated) && request.status === "pending") {
+          updated[request.id] = request.status;
+          changed = true;
+        }
+      });
+      return changed ? updated : current;
+    });
+  }, [customerToken, customerRequests]);
+
+  const unseenRequests = useMemo(() => {
+    if (!customerToken) return [];
+    return (customerRequests || []).filter((request) => {
+      const seen = seenRequestStatus[request.id];
+      if (seen === undefined) return request.status !== "pending";
+      return seen !== request.status;
+    });
+  }, [customerToken, customerRequests, seenRequestStatus]);
+
+  const markRequestsSeen = useCallback(() => {
+    const snapshot = {};
+    customerRequests.forEach((request) => {
+      snapshot[request.id] = request.status;
+    });
+    setSeenRequestStatus(snapshot);
+  }, [customerRequests]);
 
   useEffect(() => {
     loadAdminData();
@@ -657,7 +712,14 @@ function AppShell() {
     <div className="min-h-screen bg-background text-foreground">
       <Toaster position="top-right" visibleToasts={3} closeButton />
       {isOffline && <OfflineBanner />}
-      <CustomerFrame customerUser={customerUser} theme={theme} setTheme={setTheme} logoutCustomer={logoutCustomer}>
+      <CustomerFrame
+        customerUser={customerUser}
+        theme={theme}
+        setTheme={setTheme}
+        logoutCustomer={logoutCustomer}
+        unseenRequests={unseenRequests}
+        onMarkRequestsSeen={markRequestsSeen}
+      >
         <Routes>
           <Route
             path="/"
@@ -779,13 +841,16 @@ function OfflineBanner() {
   );
 }
 
-function CustomerFrame({ children, customerUser, theme, setTheme, logoutCustomer }) {
+function CustomerFrame({ children, customerUser, theme, setTheme, logoutCustomer, unseenRequests = [], onMarkRequestsSeen }) {
   return (
     <div className="pb-28">
       <header className="sticky top-0 z-[120] border-b border-white/5 bg-background/85 backdrop-blur-xl">
         <div className="mx-auto flex max-w-[560px] items-center justify-between gap-4 px-4 py-4 sm:px-6">
           <BrandBadge />
           <div className="flex items-center gap-2">
+            {customerUser && (
+              <NotificationsBell unseenRequests={unseenRequests} onMarkRequestsSeen={onMarkRequestsSeen} />
+            )}
             {customerUser ? (
               <Button
                 variant="ghost"
@@ -808,6 +873,106 @@ function CustomerFrame({ children, customerUser, theme, setTheme, logoutCustomer
       <main className="mx-auto max-w-[560px] px-4 py-6 sm:px-6">{children}</main>
       <CustomerBottomNav />
     </div>
+  );
+}
+
+function NotificationsBell({ unseenRequests, onMarkRequestsSeen }) {
+  const [open, setOpen] = useState(false);
+  const count = unseenRequests.length;
+
+  const handleOpenChange = (next) => {
+    setOpen(next);
+  };
+
+  const handleMarkRead = () => {
+    if (onMarkRequestsSeen) onMarkRequestsSeen();
+    setOpen(false);
+  };
+
+  const statusCopy = (status) => {
+    switch (status) {
+      case "confirmed":
+        return { label: "Confirmed", className: "border-emerald-400/30 bg-emerald-400/10 text-emerald-300" };
+      case "cancelled":
+        return { label: "Declined", className: "border-destructive/30 bg-destructive/10 text-destructive" };
+      case "completed":
+        return { label: "Completed", className: "border-white/10 bg-white/5 text-white/70" };
+      default:
+        return { label: status, className: "border-amber-400/30 bg-amber-400/10 text-amber-300" };
+    }
+  };
+
+  return (
+    <Popover open={open} onOpenChange={handleOpenChange}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="relative h-11 w-11 rounded-full bg-white/5 hover:bg-white/10"
+          data-testid="customer-notifications-bell"
+          aria-label={count > 0 ? `${count} new booking update${count === 1 ? "" : "s"}` : "Notifications"}
+        >
+          <BellRing className="h-4 w-4" />
+          {count > 0 && (
+            <span
+              className="absolute -right-0.5 -top-0.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold text-primary-foreground"
+              data-testid="customer-notifications-badge"
+            >
+              {count > 9 ? "9+" : count}
+            </span>
+          )}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="end"
+        className="w-[320px] border-white/10 bg-card p-0"
+        data-testid="customer-notifications-popover"
+      >
+        <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+          <p className="text-sm font-medium text-white">Booking updates</p>
+          {count > 0 && (
+            <button
+              type="button"
+              onClick={handleMarkRead}
+              className="text-xs text-primary hover:underline"
+              data-testid="customer-notifications-mark-read"
+            >
+              Mark all read
+            </button>
+          )}
+        </div>
+        {count === 0 ? (
+          <div className="px-4 py-6 text-center text-sm text-muted-foreground" data-testid="customer-notifications-empty">
+            You're all caught up.
+          </div>
+        ) : (
+          <div className="max-h-80 overflow-y-auto">
+            {unseenRequests.map((request) => {
+              const copy = statusCopy(request.status);
+              return (
+                <Link
+                  key={request.id}
+                  to="/profile"
+                  onClick={handleMarkRead}
+                  className="flex items-start gap-3 border-b border-white/5 px-4 py-3 last:border-b-0 hover:bg-white/5"
+                  data-testid={`customer-notification-item-${request.id}`}
+                >
+                  <Badge className={copy.className}>{copy.label}</Badge>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm text-white">
+                      Booking {request.reference_id}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {formatDateTime(request.date)}
+                    </p>
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+        )}
+      </PopoverContent>
+    </Popover>
   );
 }
 
