@@ -173,15 +173,22 @@ const formatCurrency = (value) =>
     maximumFractionDigits: 2,
   }).format(value || 0);
 
+// The venue lives in a single timezone (South Africa, no DST). All dates are
+// stored in UTC and must be entered/displayed as Africa/Johannesburg wall-clock
+// time regardless of the viewer's device timezone.
+const VENUE_TIME_ZONE = "Africa/Johannesburg";
+
 const formatDateTime = (value) =>
   new Intl.DateTimeFormat("en-ZA", {
     dateStyle: "medium",
     timeStyle: "short",
+    timeZone: VENUE_TIME_ZONE,
   }).format(new Date(value));
 
 const formatDate = (value) =>
   new Intl.DateTimeFormat("en-ZA", {
     dateStyle: "medium",
+    timeZone: VENUE_TIME_ZONE,
   }).format(new Date(value));
 
 const getInitials = (name = "Vaal Vibes") =>
@@ -192,11 +199,67 @@ const getInitials = (name = "Vaal Vibes") =>
     .join("")
     .toUpperCase();
 
+// Offset (ms) between venue wall-clock and UTC at a given instant. South Africa
+// observes no DST so this is constant, but it is derived rather than hard-coded.
+const venueOffsetMs = (instant) => {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: VENUE_TIME_ZONE,
+    hourCycle: "h23",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  })
+    .formatToParts(instant)
+    .reduce((acc, part) => {
+      if (part.type !== "literal") acc[part.type] = part.value;
+      return acc;
+    }, {});
+  const asUtc = Date.UTC(
+    Number(parts.year),
+    Number(parts.month) - 1,
+    Number(parts.day),
+    Number(parts.hour),
+    Number(parts.minute),
+    Number(parts.second),
+  );
+  return asUtc - instant.getTime();
+};
+
+// "HH:mm" wall-clock time of an instant, read in the venue timezone.
+const formatTimeInputValue = (value) => {
+  const instant = value ? new Date(value) : new Date();
+  if (Number.isNaN(instant.getTime())) {
+    return "19:00";
+  }
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: VENUE_TIME_ZONE,
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).format(instant);
+};
+
+// Combine a picked calendar day and an "HH:mm" time, interpreted as venue-local
+// wall-clock, into a UTC ISO string for storage.
 const buildIsoDateTime = (date, timeValue) => {
-  const safeDate = date ? new Date(date) : new Date();
+  const base = date ? new Date(date) : new Date();
+  if (Number.isNaN(base.getTime())) {
+    return new Date().toISOString();
+  }
   const [hours, minutes] = (timeValue || "19:00").split(":").map(Number);
-  safeDate.setHours(hours || 19, minutes || 0, 0, 0);
-  return safeDate.toISOString();
+  const wallAsUtc = Date.UTC(
+    base.getFullYear(),
+    base.getMonth(),
+    base.getDate(),
+    Number.isFinite(hours) ? hours : 19,
+    Number.isFinite(minutes) ? minutes : 0,
+    0,
+    0,
+  );
+  return new Date(wallAsUtc - venueOffsetMs(new Date(wallAsUtc))).toISOString();
 };
 
 const sortEventsByDate = (events) => {
@@ -1456,7 +1519,26 @@ const driveThumbnailUrl = (fileId, size = "w1600") =>
 function GalleryPage({ photos, loading }) {
   const [activePhoto, setActivePhoto] = useState(null);
   const [removalOpen, setRemovalOpen] = useState(false);
+  const [bgIndex, setBgIndex] = useState(0);
   const list = Array.isArray(photos) ? photos : [];
+
+  useEffect(() => {
+    setBgIndex(0);
+    if (list.length < 2) {
+      return undefined;
+    }
+    const prefersReducedMotion =
+      typeof window !== "undefined" &&
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (prefersReducedMotion) {
+      return undefined;
+    }
+    const timer = setInterval(() => {
+      setBgIndex((current) => (current + 1) % list.length);
+    }, 6000);
+    return () => clearInterval(timer);
+  }, [list.length]);
 
   if (loading) {
     return <SkeletonPanel />;
@@ -1476,8 +1558,24 @@ function GalleryPage({ photos, loading }) {
     setRemovalOpen(true);
   };
 
+  const backdropPhoto = list.length ? list[bgIndex % list.length] : null;
+
   return (
-    <div className="space-y-6" data-testid="gallery-page">
+    <div
+      className="relative isolate space-y-6 overflow-hidden rounded-3xl border border-white/5 p-4 sm:p-6"
+      data-testid="gallery-page"
+    >
+      {backdropPhoto ? (
+        <div aria-hidden className="pointer-events-none absolute inset-0 -z-10 bg-background">
+          <img
+            key={backdropPhoto.id}
+            src={driveThumbnailUrl(backdropPhoto.drive_file_id, "w1600")}
+            alt=""
+            className="vv-gallery-bg h-full w-full object-cover"
+          />
+          <div className="absolute inset-0 bg-gradient-to-b from-background/80 via-background/85 to-background" />
+        </div>
+      ) : null}
       <SectionHeading
         eyebrow="Memories"
         title="Vaal Vibes gallery"
@@ -1670,8 +1768,8 @@ function EventsPage({ events, loading, onOpenRequest }) {
               <CardContent className="flex items-center justify-center p-5 md:p-4">
                 <div className="w-full rounded-2xl border border-primary/20 bg-primary/10 p-4 text-center">
                   <p className="text-xs uppercase tracking-[0.28em] text-primary">Date</p>
-                  <p className="mt-3 font-display text-4xl text-white">{new Date(event.date).getDate()}</p>
-                  <p className="text-xs text-muted-foreground">{new Date(event.date).toLocaleString("en-ZA", { month: "short" })}</p>
+                  <p className="mt-3 font-display text-4xl text-white">{new Intl.DateTimeFormat("en-ZA", { timeZone: VENUE_TIME_ZONE, day: "numeric" }).format(new Date(event.date))}</p>
+                  <p className="text-xs text-muted-foreground">{new Intl.DateTimeFormat("en-ZA", { timeZone: VENUE_TIME_ZONE, month: "short" }).format(new Date(event.date))}</p>
                 </div>
               </CardContent>
               <CardContent className="flex flex-col justify-center gap-4 p-5">
@@ -2719,7 +2817,7 @@ function AdminEventsPage({ token, events, refresh }) {
     setFormState({
       title: event.title,
       date,
-      time: `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`,
+      time: formatTimeInputValue(event.date),
       description: event.description,
       lineup: (event.lineup || []).join(", "),
       image_url: event.image_url,
@@ -2875,7 +2973,7 @@ function AdminSpecialsPage({ token, specials, refresh }) {
       price_label: special.price_label,
       image_url: special.image_url,
       date,
-      time: `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`,
+      time: formatTimeInputValue(special.available_until),
       status: special.status,
       tags: (special.tags || []).join(", "),
     });
@@ -4356,7 +4454,7 @@ function AdminRequestsPage({ token, requests, loading, refresh }) {
     setEditingRequest(request);
     setEditForm({
       date,
-      time: `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`,
+      time: formatTimeInputValue(request.date),
       guest_count: request.guest_count,
       notes: request.notes || "",
       arrival_time: request.arrival_time || "",
