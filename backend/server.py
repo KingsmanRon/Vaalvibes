@@ -2,6 +2,7 @@ from collections import deque
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Deque, Dict, List, Literal, Optional, Tuple
+from zoneinfo import ZoneInfo
 
 import hmac
 import logging
@@ -26,7 +27,7 @@ load_dotenv(ROOT_DIR / ".env")
 
 # MongoDB connection
 mongo_url = os.environ["MONGO_URL"]
-client = AsyncIOMotorClient(mongo_url)
+client = AsyncIOMotorClient(mongo_url, tz_aware=True, tzinfo=timezone.utc)
 db = client[os.environ["DB_NAME"]]
 
 JWT_SECRET = os.environ.get("APP_JWT_SECRET", "vaal-vibes-jwt-secret-2026-ultra-secure")
@@ -456,6 +457,27 @@ def now_utc() -> datetime:
     return datetime.now(timezone.utc)
 
 
+# The venue operates in a single timezone (South Africa, no DST). Day boundaries
+# and "upcoming"/"past" decisions must be made in local time, not UTC.
+VENUE_TIMEZONE = ZoneInfo("Africa/Johannesburg")
+
+
+def start_of_venue_day(moment: Optional[datetime] = None) -> datetime:
+    """Return midnight of the current venue-local day, expressed in UTC."""
+    moment = moment or now_utc()
+    local_midnight = moment.astimezone(VENUE_TIMEZONE).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    return local_midnight.astimezone(timezone.utc)
+
+
+def to_venue_time(value: datetime) -> datetime:
+    """Convert a stored (UTC) datetime to venue-local time for human display."""
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(VENUE_TIMEZONE)
+
+
 def create_token(subject: str, role: str, name: str, email: str) -> str:
     payload = {
         "sub": subject,
@@ -643,7 +665,7 @@ def render_birthday_confirmation_email(
     seating_preference: str,
     bottle_service: bool,
 ) -> Tuple[str, str]:
-    pretty_date = celebration_date.strftime("%A, %d %B %Y")
+    pretty_date = to_venue_time(celebration_date).strftime("%A, %d %B %Y")
     subject = f"Vaal Vibes — birthday booking received ({reference_id})"
     html = f"""
       <div style="font-family:Inter,Arial,sans-serif;max-width:560px;margin:0 auto;color:#111;">
@@ -691,7 +713,7 @@ def render_request_status_email(
         ),
     }
     headline, body = status_copy.get(status_value, ("Booking update", "There's an update on your booking."))
-    pretty_date = date_value.strftime("%A, %d %B %Y %H:%M")
+    pretty_date = to_venue_time(date_value).strftime("%A, %d %B %Y %H:%M")
     pretty_type = request_type.replace("-", " ").title()
     greeting = customer_name or "there"
     note_block = (
@@ -1179,7 +1201,12 @@ async def root() -> MessageResponse:
 @api_router.get("/public/bootstrap", response_model=PublicBootstrapResponse)
 async def get_public_bootstrap() -> PublicBootstrapResponse:
     menu = serialize_many(await db.menu_categories.find({}, {"_id": 0}).to_list(length=100))
-    events = serialize_many(await db.events.find({"status": {"$ne": "archived"}}, {"_id": 0}).sort("date", 1).to_list(length=20))
+    events = serialize_many(
+        await db.events.find(
+            {"status": {"$ne": "archived"}, "date": {"$gte": start_of_venue_day()}},
+            {"_id": 0},
+        ).sort("date", 1).to_list(length=20)
+    )
     specials = serialize_many(await db.specials.find({"status": "active"}, {"_id": 0}).sort("available_until", 1).to_list(length=20))
     gallery = serialize_many(
         await db.gallery_photos.find({}, {"_id": 0})
@@ -1212,7 +1239,12 @@ async def get_menu() -> List[MenuCategory]:
 
 @api_router.get("/public/events", response_model=List[EventItem])
 async def get_events() -> List[EventItem]:
-    return serialize_many(await db.events.find({}, {"_id": 0}).sort("date", 1).to_list(length=100))
+    return serialize_many(
+        await db.events.find(
+            {"status": {"$ne": "archived"}, "date": {"$gte": start_of_venue_day()}},
+            {"_id": 0},
+        ).sort("date", 1).to_list(length=100)
+    )
 
 
 @api_router.get("/public/specials", response_model=List[SpecialItem])
@@ -1514,9 +1546,9 @@ async def admin_reset_mfa(
 @api_router.get("/admin/dashboard", response_model=DashboardResponse)
 async def get_admin_dashboard(current_admin: dict = Depends(get_current_admin)) -> DashboardResponse:
     requests_today = await db.requests.count_documents({
-        "created_at": {"$gte": now_utc().replace(hour=0, minute=0, second=0, microsecond=0)}
+        "created_at": {"$gte": start_of_venue_day()}
     })
-    upcoming_events = await db.events.count_documents({"date": {"$gte": now_utc()}, "status": {"$ne": "archived"}})
+    upcoming_events = await db.events.count_documents({"date": {"$gte": start_of_venue_day()}, "status": {"$ne": "archived"}})
     active_campaigns = await db.campaigns.count_documents({})
     redeemed_promos = await db.promo_codes.count_documents({"status": "redeemed"})
     recent_requests = serialize_many(await db.requests.find({}, {"_id": 0}).sort("created_at", -1).to_list(length=5))
@@ -1524,7 +1556,7 @@ async def get_admin_dashboard(current_admin: dict = Depends(get_current_admin)) 
 
     redemption_series = {}
     for entry in redemptions:
-        label = entry["created_at"].strftime("%d %b")
+        label = to_venue_time(entry["created_at"]).strftime("%d %b")
         redemption_series[label] = redemption_series.get(label, 0) + 1
 
     request_counts = {"reservation": 0, "order-intent": 0, "birthday-booking": 0}
@@ -2015,7 +2047,7 @@ async def admin_update_request_status(
     update_doc: Dict[str, Any] = {"status": payload.status}
     if payload.admin_note:
         prior_notes = existing.get("notes", "") or ""
-        timestamp = now_utc().strftime("%Y-%m-%d %H:%M")
+        timestamp = to_venue_time(now_utc()).strftime("%Y-%m-%d %H:%M")
         addition = f"[admin {timestamp}] {payload.admin_note}"
         update_doc["notes"] = f"{prior_notes}\n{addition}".strip() if prior_notes else addition
 
