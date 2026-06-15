@@ -1519,26 +1519,17 @@ const driveThumbnailUrl = (fileId, size = "w1600") =>
 function GalleryPage({ photos, loading }) {
   const [activePhoto, setActivePhoto] = useState(null);
   const [removalOpen, setRemovalOpen] = useState(false);
-  const [bgIndex, setBgIndex] = useState(0);
-  const list = Array.isArray(photos) ? photos : [];
-
-  useEffect(() => {
-    setBgIndex(0);
-    if (list.length < 2) {
-      return undefined;
+  // Shuffle the display order once per visit so the gallery feels fresh each
+  // time it loads. Re-shuffles only when the photo set changes, not on every
+  // re-render (e.g. opening the lightbox keeps the current order).
+  const list = useMemo(() => {
+    const arr = Array.isArray(photos) ? [...photos] : [];
+    for (let i = arr.length - 1; i > 0; i -= 1) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
     }
-    const prefersReducedMotion =
-      typeof window !== "undefined" &&
-      typeof window.matchMedia === "function" &&
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (prefersReducedMotion) {
-      return undefined;
-    }
-    const timer = setInterval(() => {
-      setBgIndex((current) => (current + 1) % list.length);
-    }, 6000);
-    return () => clearInterval(timer);
-  }, [list.length]);
+    return arr;
+  }, [photos]);
 
   if (loading) {
     return <SkeletonPanel />;
@@ -1558,24 +1549,8 @@ function GalleryPage({ photos, loading }) {
     setRemovalOpen(true);
   };
 
-  const backdropPhoto = list.length ? list[bgIndex % list.length] : null;
-
   return (
-    <div
-      className="relative isolate space-y-6 overflow-hidden rounded-3xl border border-white/5 p-4 sm:p-6"
-      data-testid="gallery-page"
-    >
-      {backdropPhoto ? (
-        <div aria-hidden className="pointer-events-none absolute inset-0 -z-10 bg-background">
-          <img
-            key={backdropPhoto.id}
-            src={driveThumbnailUrl(backdropPhoto.drive_file_id, "w1600")}
-            alt=""
-            className="vv-gallery-bg h-full w-full object-cover"
-          />
-          <div className="absolute inset-0 bg-gradient-to-b from-background/80 via-background/85 to-background" />
-        </div>
-      ) : null}
+    <div className="space-y-6" data-testid="gallery-page">
       <SectionHeading
         eyebrow="Memories"
         title="Vaal Vibes gallery"

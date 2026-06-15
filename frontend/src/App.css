@@ -64,22 +64,3 @@
   object-fit: cover;
   object-position: center;
 }
-
-.vv-gallery-bg {
-  animation: vv-gallery-fade 1.8s ease-in-out;
-}
-
-@keyframes vv-gallery-fade {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .vv-gallery-bg {
-    animation: none;
-  }
-}
