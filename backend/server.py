@@ -145,6 +145,7 @@ class EventItem(BaseModel):
     location: str = "Vaal Vibes"
     status: Literal["scheduled", "live", "archived"] = "scheduled"
     cta_label: str = "RSVP Intent"
+    pinned: bool = False
 
 
 class EventCreateRequest(BaseModel):
@@ -156,6 +157,10 @@ class EventCreateRequest(BaseModel):
     location: str = "Vaal Vibes"
     status: Literal["scheduled", "live", "archived"] = "scheduled"
     cta_label: str = "RSVP Intent"
+
+
+class EventPinRequest(BaseModel):
+    pinned: bool
 
 
 class SpecialItem(BaseModel):
@@ -832,6 +837,16 @@ async def repair_promo_signatures() -> None:
             )
 
 
+async def backfill_event_pinned() -> None:
+    """Ensure every stored event has an explicit `pinned` flag.
+
+    Events created before the pin feature lack the field. Normalising it to
+    False keeps the `(pinned, date)` sort consistent (Mongo treats missing
+    fields as a distinct sort group from False) across public and admin lists.
+    """
+    await db.events.update_many({"pinned": {"$exists": False}}, {"$set": {"pinned": False}})
+
+
 async def validate_promo_logic(code: str, bill_amount: float) -> PromoValidationResponse:
     promo = await db.promo_codes.find_one({"code": code.upper()}, {"_id": 0})
     if not promo:
@@ -1205,7 +1220,7 @@ async def get_public_bootstrap() -> PublicBootstrapResponse:
         await db.events.find(
             {"status": {"$ne": "archived"}, "date": {"$gte": start_of_venue_day()}},
             {"_id": 0},
-        ).sort("date", 1).to_list(length=20)
+        ).sort([("pinned", -1), ("date", 1)]).to_list(length=20)
     )
     specials = serialize_many(await db.specials.find({"status": "active"}, {"_id": 0}).sort("available_until", 1).to_list(length=20))
     gallery = serialize_many(
@@ -1243,7 +1258,7 @@ async def get_events() -> List[EventItem]:
         await db.events.find(
             {"status": {"$ne": "archived"}, "date": {"$gte": start_of_venue_day()}},
             {"_id": 0},
-        ).sort("date", 1).to_list(length=100)
+        ).sort([("pinned", -1), ("date", 1)]).to_list(length=100)
     )
 
 
@@ -1578,7 +1593,7 @@ async def get_admin_dashboard(current_admin: dict = Depends(get_current_admin)) 
 
 @api_router.get("/admin/events", response_model=List[EventItem])
 async def admin_list_events(current_admin: dict = Depends(get_current_admin)) -> List[EventItem]:
-    return serialize_many(await db.events.find({}, {"_id": 0}).sort("date", 1).to_list(length=100))
+    return serialize_many(await db.events.find({}, {"_id": 0}).sort([("pinned", -1), ("date", 1)]).to_list(length=100))
 
 
 @api_router.post("/admin/events", response_model=EventItem)
@@ -1596,6 +1611,17 @@ async def admin_update_event(event_id: str, payload: EventCreateRequest, current
     if not updated:
         raise HTTPException(status_code=404, detail="Event not found")
     await append_audit_log(current_admin, "update", "event", event_id, f"Updated event {updated['title']}")
+    return updated
+
+
+@api_router.patch("/admin/events/{event_id}/pin", response_model=EventItem)
+async def admin_pin_event(event_id: str, payload: EventPinRequest, current_admin: dict = Depends(get_current_admin)) -> EventItem:
+    result = await db.events.update_one({"id": event_id}, {"$set": {"pinned": payload.pinned}})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Event not found")
+    updated = serialize(await db.events.find_one({"id": event_id}, {"_id": 0}))
+    action = "pinned" if payload.pinned else "unpinned"
+    await append_audit_log(current_admin, "update", "event", event_id, f"{action.capitalize()} event {updated['title']}")
     return updated
 
 
@@ -2274,6 +2300,7 @@ logger = logging.getLogger(__name__)
 async def startup_tasks() -> None:
     await seed_database()
     await repair_promo_signatures()
+    await backfill_event_pinned()
     await ensure_demo_customer_active_promo()
     logger.info("Vaal Vibes API startup complete")
 

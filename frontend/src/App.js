@@ -20,6 +20,8 @@ import {
   Megaphone,
   Menu,
   Moon,
+  Pin,
+  PinOff,
   Plus,
   Search,
   SunMedium,
@@ -277,7 +279,11 @@ const sortEventsByDate = (events) => {
   });
   upcoming.sort((a, b) => new Date(a.date) - new Date(b.date));
   past.sort((a, b) => new Date(b.date) - new Date(a.date));
-  return [...upcoming, ...past];
+  const ordered = [...upcoming, ...past];
+  // Admin-pinned events always float to the very top, keeping their date order otherwise.
+  const pinned = ordered.filter((event) => event.pinned);
+  const rest = ordered.filter((event) => !event.pinned);
+  return [...pinned, ...rest];
 };
 
 const getEventFilter = (events, filter) => {
@@ -289,11 +295,11 @@ const getEventFilter = (events, filter) => {
   if (filter === "week") {
     const limit = new Date();
     limit.setDate(now.getDate() + 7);
-    return sorted.filter((event) => new Date(event.date) <= limit);
+    return sorted.filter((event) => event.pinned || new Date(event.date) <= limit);
   }
   const monthLimit = new Date();
   monthLimit.setMonth(now.getMonth() + 1);
-  return sorted.filter((event) => new Date(event.date) <= monthLimit);
+  return sorted.filter((event) => event.pinned || new Date(event.date) <= monthLimit);
 };
 
 const getSpecialFeatureImage = (special) => {
@@ -1286,7 +1292,7 @@ function HomePage({ bootstrap, loading, error, onOpenRequest, onOpenSpecial }) {
         <SectionHeading eyebrow="Line-up" title="Upcoming events" description="Request a booking, RSVP intent, or booth reservation before the venue fills up." />
         <div className="space-y-4">
           {sortEventsByDate(bootstrap.events).map((event) => (
-            <Card key={event.id} className="overflow-hidden border-white/10 bg-card transition-colors hover:border-primary/35" data-testid="event-card">
+            <Card key={event.id} className={`overflow-hidden bg-card transition-colors ${event.pinned ? "border-primary/40 ring-1 ring-primary/30" : "border-white/10 hover:border-primary/35"}`} data-testid="event-card">
               <div className="grid gap-4 md:grid-cols-[200px_1fr]">
                 <div className="flex items-center justify-center bg-black/40">
                   <img src={getEventFeatureImage(event)} alt={event.title} className="h-auto max-h-[520px] w-full object-contain" />
@@ -1294,7 +1300,12 @@ function HomePage({ bootstrap, loading, error, onOpenRequest, onOpenSpecial }) {
                 <CardContent className="flex flex-col gap-4 p-5">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
-                      <Badge className="border-primary/20 bg-primary/10 text-primary">{formatDate(event.date)}</Badge>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {event.pinned ? (
+                          <Badge className="border-primary/40 bg-primary text-primary-foreground" data-testid={`event-pinned-badge-${event.id}`}><Pin className="mr-1 h-3 w-3" />Pinned</Badge>
+                        ) : null}
+                        <Badge className="border-primary/20 bg-primary/10 text-primary">{formatDate(event.date)}</Badge>
+                      </div>
                       <h3 className="mt-3 font-display text-3xl leading-none text-white">{event.title}</h3>
                       <p className="mt-2 text-sm text-muted-foreground">{event.description}</p>
                     </div>
@@ -1760,7 +1771,7 @@ function EventsPage({ events, loading, onOpenRequest }) {
       </Tabs>
       <div className="space-y-4">
         {filtered.map((event) => (
-          <Card key={event.id} className="overflow-hidden border-white/10 bg-card" data-testid={`events-list-card-${event.id}`}>
+          <Card key={event.id} className={`overflow-hidden bg-card ${event.pinned ? "border-primary/40 ring-1 ring-primary/30" : "border-white/10"}`} data-testid={`events-list-card-${event.id}`}>
             <div className="grid gap-4 md:grid-cols-[220px_120px_1fr_auto]">
               <div className="flex items-center justify-center bg-black/40">
                 <img src={getEventFeatureImage(event)} alt={event.title} className="h-auto max-h-[520px] w-full object-contain" />
@@ -1774,6 +1785,9 @@ function EventsPage({ events, loading, onOpenRequest }) {
               </CardContent>
               <CardContent className="flex flex-col justify-center gap-4 p-5">
                 <div>
+                  {event.pinned ? (
+                    <Badge className="mb-2 border-primary/40 bg-primary text-primary-foreground" data-testid={`events-pinned-badge-${event.id}`}><Pin className="mr-1 h-3 w-3" />Pinned</Badge>
+                  ) : null}
                   <h3 className="font-display text-3xl text-white">{event.title}</h3>
                   <p className="mt-2 text-sm text-muted-foreground">{event.description}</p>
                 </div>
@@ -2865,6 +2879,17 @@ function AdminEventsPage({ token, events, refresh }) {
     }
   };
 
+  const togglePin = async (event) => {
+    const nextPinned = !event.pinned;
+    try {
+      await api.patch(`/admin/events/${event.id}/pin`, { pinned: nextPinned }, authConfig(token));
+      toast.success(nextPinned ? "Event pinned to the top." : "Event unpinned.");
+      refresh(token);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Could not update the pin.");
+    }
+  };
+
   return (
     <div className="space-y-6" data-testid="admin-events-page">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -2893,12 +2918,22 @@ function AdminEventsPage({ token, events, refresh }) {
               </TableHeader>
               <TableBody>
                 {filtered.map((event) => (
-                  <TableRow key={event.id}>
-                    <TableCell>{event.title}</TableCell>
+                  <TableRow key={event.id} data-pinned={event.pinned ? "true" : "false"}>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        {event.pinned ? (
+                          <Badge className="border-primary/40 bg-primary text-primary-foreground" data-testid={`admin-event-pinned-badge-${event.id}`}><Pin className="mr-1 h-3 w-3" />Pinned</Badge>
+                        ) : null}
+                        <span>{event.title}</span>
+                      </div>
+                    </TableCell>
                     <TableCell>{formatDateTime(event.date)}</TableCell>
                     <TableCell><Badge className="border-primary/20 bg-primary/10 text-primary">{event.status}</Badge></TableCell>
                     <TableCell>
                       <div className="flex gap-2">
+                        <Button size="sm" variant={event.pinned ? "secondary" : "outline"} onClick={() => togglePin(event)} data-testid={`pin-event-button-${event.id}`}>
+                          {event.pinned ? <><PinOff className="mr-1 h-3.5 w-3.5" />Unpin</> : <><Pin className="mr-1 h-3.5 w-3.5" />Pin</>}
+                        </Button>
                         <Button size="sm" variant="outline" onClick={() => openEdit(event)} data-testid={`edit-event-button-${event.id}`}>Edit</Button>
                         <Button size="sm" variant="ghost" onClick={() => deleteEvent(event.id)} data-testid={`delete-event-button-${event.id}`}>Delete</Button>
                       </div>
