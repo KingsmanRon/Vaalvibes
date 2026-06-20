@@ -1531,7 +1531,16 @@ function GalleryPage({ photos, loading }) {
   const [activePhoto, setActivePhoto] = useState(null);
   const [removalOpen, setRemovalOpen] = useState(false);
   const [bgIndex, setBgIndex] = useState(0);
-  const list = Array.isArray(photos) ? photos : [];
+  // Shuffle on every mount (page reload or navigation back to the gallery) so the
+  // order is fresh each visit and newly uploaded photos are just as likely to lead.
+  const list = useMemo(() => {
+    const arr = Array.isArray(photos) ? [...photos] : [];
+    for (let i = arr.length - 1; i > 0; i -= 1) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  }, [photos]);
 
   useEffect(() => {
     setBgIndex(0);
