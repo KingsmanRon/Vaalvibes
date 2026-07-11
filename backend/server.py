@@ -1,9 +1,11 @@
 from collections import deque
 from datetime import datetime, timedelta, timezone
+from html import escape as html_escape
 from pathlib import Path
 from typing import Any, Deque, Dict, List, Literal, Optional, Tuple
 from zoneinfo import ZoneInfo
 
+import asyncio
 import hmac
 import logging
 import os
@@ -18,6 +20,7 @@ from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request, status
 from motor.motor_asyncio import AsyncIOMotorClient
 from passlib.context import CryptContext
+from pymongo.errors import DuplicateKeyError
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.middleware.cors import CORSMiddleware
 
@@ -538,6 +541,20 @@ def verify_password(password: str, hashed_password: str) -> bool:
     return pwd_context.verify(password, hashed_password)
 
 
+async def hash_password_async(password: str) -> str:
+    """PBKDF2 is CPU-bound; run it off the event loop."""
+    return await asyncio.to_thread(hash_password, password)
+
+
+async def verify_password_async(password: str, hashed_password: str) -> bool:
+    return await asyncio.to_thread(verify_password, password, hashed_password)
+
+
+# Verified against when a login email doesn't exist, so unknown-account and
+# wrong-password attempts take the same time (no user enumeration via timing).
+_DUMMY_PASSWORD_HASH = pwd_context.hash(uuid.uuid4().hex)
+
+
 def serialize(doc: Optional[dict]) -> Optional[dict]:
     if not doc:
         return None
@@ -635,11 +652,13 @@ def reset_rate_limit(request: Optional[Request], scope: str) -> None:
 
 
 # ─── Transactional email (Resend) ────────────────────────────────────────────
-def send_transactional_email(to: str, subject: str, html: str) -> bool:
+async def send_transactional_email(to: str, subject: str, html: str) -> bool:
     """Send a transactional email via Resend. Returns True on success.
 
     Logs and swallows errors — callers should not 500 because email delivery
-    failed; the underlying record is already persisted.
+    failed; the underlying record is already persisted. The Resend SDK is
+    synchronous (blocking HTTP), so the call runs in a worker thread to keep
+    the event loop free.
     """
     if not RESEND_API_KEY:
         logging.getLogger(__name__).info(
@@ -647,13 +666,14 @@ def send_transactional_email(to: str, subject: str, html: str) -> bool:
         )
         return False
     try:
-        resend.Emails.send(
+        await asyncio.to_thread(
+            resend.Emails.send,
             {
                 "from": RESEND_FROM_EMAIL,
                 "to": [to],
                 "subject": subject,
                 "html": html,
-            }
+            },
         )
         return True
     except Exception as exc:  # noqa: BLE001 — third-party SDK raises a variety of errors
@@ -672,6 +692,9 @@ def render_birthday_confirmation_email(
 ) -> Tuple[str, str]:
     pretty_date = to_venue_time(celebration_date).strftime("%A, %d %B %Y")
     subject = f"Vaal Vibes — birthday booking received ({reference_id})"
+    full_name = html_escape(full_name)
+    arrival_time = html_escape(arrival_time)
+    seating_preference = html_escape(seating_preference)
     html = f"""
       <div style="font-family:Inter,Arial,sans-serif;max-width:560px;margin:0 auto;color:#111;">
         <h1 style="font-size:22px;margin:0 0 12px;">Happy birthday plans incoming, {full_name}!</h1>
@@ -719,11 +742,11 @@ def render_request_status_email(
     }
     headline, body = status_copy.get(status_value, ("Booking update", "There's an update on your booking."))
     pretty_date = to_venue_time(date_value).strftime("%A, %d %B %Y %H:%M")
-    pretty_type = request_type.replace("-", " ").title()
-    greeting = customer_name or "there"
+    pretty_type = html_escape(request_type.replace("-", " ").title())
+    greeting = html_escape(customer_name or "there")
     note_block = (
         f'<p style="margin:16px 0;padding:12px 16px;border-left:3px solid #f0c419;background:#1a1a1a;color:#eee;border-radius:6px;">'
-        f'<strong style="display:block;margin-bottom:4px;color:#f0c419;">A note from the team</strong>{admin_note}</p>'
+        f'<strong style="display:block;margin-bottom:4px;color:#f0c419;">A note from the team</strong>{html_escape(admin_note)}</p>'
         if admin_note
         else ""
     )
@@ -751,13 +774,13 @@ def render_request_message_email(
     reference_id: str,
     message: str,
 ) -> Tuple[str, str]:
-    greeting = customer_name or "there"
+    greeting = html_escape(customer_name or "there")
     subject = f"Vaal Vibes — update on your booking ({reference_id})"
     html = f"""
       <div style="font-family:Inter,Arial,sans-serif;max-width:560px;margin:0 auto;color:#111;">
         <h1 style="font-size:22px;margin:0 0 12px;">Hi {greeting},</h1>
         <p>Quick note from the Vaal Vibes team about booking <strong>{reference_id}</strong>:</p>
-        <div style="margin:16px 0;padding:16px;border-left:3px solid #f0c419;background:#1a1a1a;color:#eee;border-radius:6px;white-space:pre-wrap;">{message}</div>
+        <div style="margin:16px 0;padding:16px;border-left:3px solid #f0c419;background:#1a1a1a;color:#eee;border-radius:6px;white-space:pre-wrap;">{html_escape(message)}</div>
         <p style="font-size:13px;color:#666;">— Vaal Vibes</p>
       </div>
     """.strip()
@@ -837,6 +860,44 @@ async def repair_promo_signatures() -> None:
             )
 
 
+async def ensure_indexes() -> None:
+    """Create the indexes the hot paths rely on. Idempotent — Mongo treats an
+    existing identical index as a no-op. Each index is attempted independently
+    so one failure (e.g. a unique constraint colliding with legacy duplicate
+    data) can't take the whole startup down.
+    """
+    index_specs = [
+        # (collection, keys, kwargs)
+        (db.customers, [("email", 1)], {"unique": True}),
+        (db.customers, [("id", 1)], {}),
+        (db.admin_users, [("email", 1)], {"unique": True}),
+        (db.admin_users, [("id", 1)], {}),
+        (db.promo_codes, [("code", 1)], {}),
+        (db.promo_codes, [("id", 1)], {}),
+        (db.promo_codes, [("user_id", 1), ("issued_at", -1)], {}),
+        (db.promo_codes, [("pool_id", 1), ("status", 1)], {}),
+        (db.requests, [("id", 1)], {}),
+        (db.requests, [("user_id", 1), ("created_at", -1)], {}),
+        (db.requests, [("created_at", -1)], {}),
+        (db.events, [("id", 1)], {}),
+        (db.events, [("pinned", -1), ("date", 1)], {}),
+        (db.specials, [("available_until", 1)], {}),
+        (db.menu_categories, [("slug", 1)], {}),
+        (db.menu_categories, [("items.id", 1)], {}),
+        (db.gallery_photos, [("drive_file_id", 1)], {}),
+        (db.gallery_photos, [("sort_order", 1), ("created_at", -1)], {}),
+        (db.audit_logs, [("created_at", -1)], {}),
+        (db.redemption_logs, [("created_at", -1)], {}),
+        (db.campaigns, [("created_at", -1)], {}),
+    ]
+    log = logging.getLogger(__name__)
+    for collection, keys, kwargs in index_specs:
+        try:
+            await collection.create_index(keys, **kwargs)
+        except Exception as exc:  # noqa: BLE001 — startup must survive index conflicts
+            log.warning("Could not create index %s on %s: %s", keys, collection.name, exc)
+
+
 async def backfill_event_pinned() -> None:
     """Ensure every stored event has an explicit `pinned` flag.
 
@@ -848,11 +909,13 @@ async def backfill_event_pinned() -> None:
 
 
 async def validate_promo_logic(code: str, bill_amount: float) -> PromoValidationResponse:
-    promo = await db.promo_codes.find_one({"code": code.upper()}, {"_id": 0})
+    # Tolerate whitespace from scanned/copy-pasted codes.
+    code = code.strip().upper()
+    promo = await db.promo_codes.find_one({"code": code}, {"_id": 0})
     if not promo:
         return PromoValidationResponse(
             approved=False,
-            code=code.upper(),
+            code=code,
             reason="Promo code not found",
             status="rejected",
             min_spend=0,
@@ -1310,7 +1373,7 @@ async def create_birthday_request(payload: BirthdayBookingCreate) -> CustomerReq
             seating_preference=payload.seating_preference,
             bottle_service=payload.bottle_service,
         )
-        send_transactional_email(payload.email, subject, html)
+        await send_transactional_email(payload.email, subject, html)
     return request_doc
 
 
@@ -1328,12 +1391,17 @@ async def register_customer(payload: CustomerRegisterRequest, request: Request) 
         "name": payload.name,
         "email": email,
         "phone": payload.phone,
-        "password_hash": hash_password(payload.password),
+        "password_hash": await hash_password_async(payload.password),
         "dob": payload.dob,
         "preferences": payload.preferences.model_dump(),
         "created_at": now_utc(),
     }
-    await db.customers.insert_one(customer)
+    try:
+        await db.customers.insert_one(customer)
+    except DuplicateKeyError:
+        # Unique index on email closes the race between the pre-check above
+        # and this insert when two registrations arrive concurrently.
+        raise HTTPException(status_code=400, detail="Email already registered")
     promo = await issue_welcome_promo(customer["id"])
     token = create_token(customer["id"], "customer", customer["name"], customer["email"])
     promo_info = (
@@ -1356,7 +1424,10 @@ async def login_customer(payload: CustomerLoginRequest, request: Request) -> Aut
     enforce_rate_limit(request, "auth.login", max_attempts=8, window_seconds=300)
     email = payload.email.strip().lower()
     user = await db.customers.find_one({"email": email}, {"_id": 0})
-    if not user or not verify_password(payload.password, user["password_hash"]):
+    password_ok = await verify_password_async(
+        payload.password, user["password_hash"] if user else _DUMMY_PASSWORD_HASH
+    )
+    if not user or not password_ok:
         raise HTTPException(status_code=401, detail="Invalid credentials")
     reset_rate_limit(request, "auth.login")
     if user["email"] == "guest@vaalvibes.app":
@@ -1364,7 +1435,11 @@ async def login_customer(payload: CustomerLoginRequest, request: Request) -> Aut
         if not active_demo_promo:
             await issue_welcome_promo(user["id"])
     token = create_token(user["id"], "customer", user["name"], user["email"])
-    latest_promo = serialize(await db.promo_codes.find_one({"user_id": user["id"]}, {"_id": 0}, sort=[("issued_at", -1)]))
+    latest_promo = serialize(
+        await db.promo_codes.find_one(
+            {"user_id": user["id"], "status": "active"}, {"_id": 0}, sort=[("issued_at", -1)]
+        )
+    )
     promo = None
     if latest_promo:
         promo = PromoInfo(
@@ -1423,7 +1498,7 @@ async def update_customer_profile(payload: CustomerRegisterRequest, current_user
         "preferences": payload.preferences.model_dump(),
     }
     if payload.password:
-        update_doc["password_hash"] = hash_password(payload.password)
+        update_doc["password_hash"] = await hash_password_async(payload.password)
     await db.customers.update_one({"id": current_user["id"]}, {"$set": update_doc})
     updated = serialize(await db.customers.find_one({"id": current_user["id"]}, {"_id": 0}))
     return CustomerProfile(
@@ -1478,7 +1553,10 @@ async def admin_login(payload: AdminLoginRequest, request: Request):
     enforce_rate_limit(request, "admin.login", max_attempts=5, window_seconds=300)
     email = payload.email.strip().lower()
     admin = await db.admin_users.find_one({"email": email}, {"_id": 0})
-    if not admin or not verify_password(payload.password, admin["password_hash"]):
+    password_ok = await verify_password_async(
+        payload.password, admin["password_hash"] if admin else _DUMMY_PASSWORD_HASH
+    )
+    if not admin or not password_ok:
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     secret = admin.get("totp_secret")
@@ -1567,16 +1645,21 @@ async def get_admin_dashboard(current_admin: dict = Depends(get_current_admin)) 
     active_campaigns = await db.campaigns.count_documents({})
     redeemed_promos = await db.promo_codes.count_documents({"status": "redeemed"})
     recent_requests = serialize_many(await db.requests.find({}, {"_id": 0}).sort("created_at", -1).to_list(length=5))
-    redemptions = serialize_many(await db.redemption_logs.find({}, {"_id": 0}).sort("created_at", -1).to_list(length=30))
 
-    redemption_series = {}
-    for entry in redemptions:
+    # Only successful redemptions (the logs also record validations and
+    # rejected attempts), charted oldest-to-newest.
+    redemptions = await db.redemption_logs.find(
+        {"action": "redeem"}, {"_id": 0, "created_at": 1}
+    ).sort("created_at", -1).to_list(length=90)
+    redemption_series: Dict[str, int] = {}
+    for entry in reversed(redemptions):
         label = to_venue_time(entry["created_at"]).strftime("%d %b")
         redemption_series[label] = redemption_series.get(label, 0) + 1
 
+    # Breakdown over all requests, not just the 5 shown in the recents table.
     request_counts = {"reservation": 0, "order-intent": 0, "birthday-booking": 0}
-    for item in recent_requests:
-        request_counts[item["request_type"]] = request_counts.get(item["request_type"], 0) + 1
+    async for row in db.requests.aggregate([{"$group": {"_id": "$request_type", "count": {"$sum": 1}}}]):
+        request_counts[row["_id"]] = request_counts.get(row["_id"], 0) + row["count"]
 
     return DashboardResponse(
         kpis=[
@@ -1965,13 +2048,16 @@ async def admin_dispatch_campaign(campaign_id: str, current_admin: dict = Depend
             failed_count += 1
             continue
         try:
-            resend.Emails.send(
+            # The Resend SDK is blocking; a large audience sent inline would
+            # otherwise freeze every other request until the loop finishes.
+            await asyncio.to_thread(
+                resend.Emails.send,
                 {
                     "from": RESEND_FROM_EMAIL,
                     "to": [email],
                     "subject": campaign["subject"],
                     "html": campaign["body_html"],
-                }
+                },
             )
             sent_count += 1
         except Exception as exc:  # noqa: BLE001 — third-party SDK raises a variety of errors
@@ -2097,7 +2183,7 @@ async def admin_update_request_status(
             date_value=updated["date"],
             admin_note=payload.admin_note,
         )
-        send_transactional_email(updated["customer_email"], subject, html)
+        await send_transactional_email(updated["customer_email"], subject, html)
     return updated
 
 
@@ -2160,7 +2246,7 @@ async def admin_notify_request(
         reference_id=reference,
         message=message,
     )
-    sent = send_transactional_email(existing["customer_email"], subject, html)
+    sent = await send_transactional_email(existing["customer_email"], subject, html)
     await append_audit_log(
         current_admin,
         "notify",
@@ -2280,10 +2366,13 @@ async def admin_revoke_promo(promo_id: str, current_admin: dict = Depends(get_cu
 # Include the router in the main app
 app.include_router(api_router)
 
+# Strip whitespace so "https://a.com, https://b.com" doesn't silently produce
+# an origin entry that never matches.
+cors_origins = [origin.strip() for origin in os.environ.get("CORS_ORIGINS", "*").split(",") if origin.strip()]
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
-    allow_origins=os.environ.get("CORS_ORIGINS", "*").split(","),
+    allow_origins=cors_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -2298,6 +2387,17 @@ logger = logging.getLogger(__name__)
 
 @app.on_event("startup")
 async def startup_tasks() -> None:
+    if "APP_JWT_SECRET" not in os.environ:
+        logger.warning(
+            "APP_JWT_SECRET is not set — using the built-in default. "
+            "Anyone who reads the source can forge auth tokens; set a real secret in production."
+        )
+    if "PROMO_SIGNING_SECRET" not in os.environ:
+        logger.warning(
+            "PROMO_SIGNING_SECRET is not set — using the built-in default. "
+            "Set a real secret in production so promo signatures can't be forged."
+        )
+    await ensure_indexes()
     await seed_database()
     await repair_promo_signatures()
     await backfill_event_pinned()
