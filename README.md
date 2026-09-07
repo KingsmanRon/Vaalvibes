@@ -197,7 +197,7 @@ Configure each environment variable in the relevant platform dashboard:
 | Section | What it does |
 |---------|--------------|
 | Dashboard | At-a-glance counts of upcoming events, open requests, active promos, recent campaigns. |
-| Events | CRUD for event posters and details surfaced on the public site. |
+| Events | CRUD for event posters and details surfaced on the public site. Posters are uploaded in the browser — no repo commit needed. |
 | Specials | CRUD for nightly specials and time-limited offers. |
 | Menu | Full editor for `menu_categories` and embedded `items` (price, description, tags, featured flag). |
 | Gallery | Add / remove / reorder gallery photos backed by Google Drive file IDs. |
@@ -208,7 +208,27 @@ Configure each environment variable in the relevant platform dashboard:
 
 ### Major MongoDB collections
 
-`customers`, `admin_users`, `events`, `specials`, `menu_categories` (with embedded `items`), `gallery_photos`, `requests` (reservations + birthday bookings + order intents), `promo_pools`, `promo_codes`, `redemption_logs`, `campaigns`, `audit_logs`.
+`customers`, `admin_users`, `events`, `specials`, `menu_categories` (with embedded `items`), `gallery_photos`, `media_assets` (uploaded poster bytes), `requests` (reservations + birthday bookings + order intents), `promo_pools`, `promo_codes`, `redemption_logs`, `campaigns`, `audit_logs`.
+
+---
+
+## Poster uploads
+
+Event, special, and menu-item images are uploaded straight from the admin console — no GitHub commit and no redeploy. Drag a poster onto the image field (or tap it, or paste from the clipboard) and the SPA downscales it before sending it to `POST /api/admin/media`. The API sniffs the magic bytes to confirm it really is an image, rejects anything over 8MB, and stores the bytes in the `media_assets` collection. Saved content references the poster as a relative `/api/public/media/<id>` URL, which `resolveMediaUrl()` in the SPA resolves against `REACT_APP_BACKEND_URL` at render time — so the backend can move hosts without rewriting stored data.
+
+| Route | Purpose |
+|-------|---------|
+| `POST /api/admin/media` | Multipart upload. Returns the stored asset including its `url`. |
+| `GET /api/admin/media` | Poster library listing plus total stored bytes. |
+| `DELETE /api/admin/media/{id}` | Deletes a poster. Returns `409` (naming the content) if an event, special, or menu item still points at it. |
+| `GET /api/public/media/{id}` | Serves the bytes. Immutable per id, so it is cached for a year with `ETag` revalidation. |
+
+Notes:
+
+- **Uploads are downscaled client-side** to a 1800px longest edge, so a 6MB phone photo typically lands in the 150-400KB range. GIFs are passed through untouched so animations survive, and the original is kept whenever re-encoding turns out larger.
+- **The event form prefills from the file name.** `05septblxie.jpg` fills in 5 September and the title "Blxie"; `2026-09-05 Party Yama.png` and `Sept 12 Ladies Night.jpeg` work too. Only blank fields are filled, a toast says what was filled, and camera/WhatsApp filenames contribute a date but never a junk title.
+- **"Use a link" still works** for images hosted elsewhere, and files already in `frontend/public/` keep working unchanged.
+- **Storage lives in MongoDB.** Watch the total shown in the poster library against your Atlas tier; delete retired posters from there when it grows.
 
 ---
 
@@ -242,6 +262,7 @@ Until those steps are done, the dispatch endpoint will continue to run in mock-o
 
 - **Seed is structural bootstrap only.** `seed_database()` runs once against an empty DB and inserts only what the app needs to *function*: admin logins, the welcome promo pool, and the canonical menu. Operational content — events, specials, campaigns — is **not seeded**; it lives entirely in MongoDB and is managed via `/admin/*` routes. A redeploy never overwrites or re-creates these.
 - **Menu is data-driven.** `/admin/menu` is the canonical place to add or reprice items. Code changes are not required for new prices, items, or categories. To bulk-restore the canonical menu, use `/admin/menu` → "Reset to default prices" (calls `POST /admin/menu/sync-defaults`, which re-inserts the contents of `default_menu_categories()` in `backend/server.py`).
+- **Posters are uploaded, gallery photos are not.** Event/special/menu images are stored by the API (see "Poster uploads"). The gallery is a separate flow that still hot-links Google Drive.
 - **Gallery photos use Google Drive file IDs.** The Drive folder pointed at by `REACT_APP_POSTERS_FOLDER_URL` must be set to "Anyone with the link can view" so the SPA can hot-link the images.
 - **Campaign dispatch falls back to mock mode** when `RESEND_API_KEY` is unset. Real email only sends once the key is configured and the domain is verified. **Birthday booking confirmation emails** use the same Resend pipeline — they are sent automatically to the requester when `RESEND_API_KEY` is set, and silently skipped (with a log line) when it isn't. Reservation and order-intent flows do not send a customer-facing confirmation; they continue to rely on Formspree forwarding.
 - **JWTs are 7-day tokens.** Customers and admins will be logged out roughly weekly; rotate `APP_JWT_SECRET` to force-revoke all sessions.
@@ -254,7 +275,7 @@ Until those steps are done, the dispatch endpoint will continue to run in mock-o
 
 - Automated reservation follow-ups (confirmation + reminder emails). Birthday confirmation emails ship today; reservation and order-intent flows still rely on Formspree only.
 - Move the in-memory login rate limiter to Redis once the backend scales beyond a single instance.
-- Storage usage / quota dashboard for gallery and Drive contents.
+- Storage usage / quota dashboard for gallery and Drive contents (the poster library already reports its own total).
 - Audience segmentation for campaigns (currently broadcast-only).
 - Split `backend/server.py` and `frontend/src/App.js` into modules once the surface area stabilises.
 - Add automated tests around promo signing, JWT auth, and campaign dispatch.

@@ -1,4 +1,4 @@
-import { cloneElement, isValidElement, useCallback, useEffect, useMemo, useState } from "react";
+import { cloneElement, isValidElement, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "@/App.css";
 import { BrowserRouter, Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import axios from "axios";
@@ -15,6 +15,8 @@ import {
   Home,
   Image,
   LayoutDashboard,
+  Link2,
+  Loader2,
   LogOut,
   MapPin,
   Megaphone,
@@ -28,6 +30,7 @@ import {
   Ticket,
   TicketPercent,
   Trash2,
+  UploadCloud,
   UserRound,
   Users,
   UtensilsCrossed,
@@ -312,7 +315,7 @@ const getSpecialFeatureImage = (special) => {
   if (special?.title === "Sunset Special") {
     return "/corona1.jpg";
   }
-  return special?.image_url || SPECIAL_FEATURE_IMAGE;
+  return resolveMediaUrl(special?.image_url) || SPECIAL_FEATURE_IMAGE;
 };
 
 const getEventFeatureImage = (event) => {
@@ -322,7 +325,198 @@ const getEventFeatureImage = (event) => {
   if (event?.title === "Party Yama 2000") {
     return "/fridayafterdark.PNG";
   }
-  return event?.image_url || FRIDAY_AFTER_DARK_IMAGE;
+  return resolveMediaUrl(event?.image_url) || FRIDAY_AFTER_DARK_IMAGE;
+};
+
+// --- Poster uploads ---------------------------------------------------------
+// Uploaded posters are stored by the API and referenced as "/api/public/media/<id>".
+// The SPA and the API live on different hosts in production, so those relative
+// paths have to be resolved against the backend. Everything else (files in
+// public/, absolute URLs) is passed through untouched.
+const resolveMediaUrl = (url) => {
+  if (typeof url !== "string" || !url) {
+    return url;
+  }
+  if (url.startsWith("/api/")) {
+    return `${BACKEND_URL || ""}${url}`;
+  }
+  return url;
+};
+
+const isUploadedMediaUrl = (url) => typeof url === "string" && url.startsWith("/api/public/media/");
+
+const formatBytes = (bytes) => {
+  const value = Number(bytes) || 0;
+  if (value < 1024) {
+    return `${value} B`;
+  }
+  if (value < 1024 * 1024) {
+    return `${Math.round(value / 1024)} KB`;
+  }
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+};
+
+const ACCEPTED_IMAGE_TYPES = "image/jpeg,image/png,image/webp,image/gif";
+const MAX_POSTER_EDGE = 1800;
+const COMPRESS_THRESHOLD_BYTES = 500 * 1024;
+
+const loadImageElement = (file) =>
+  new Promise((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file);
+    // `Image` is taken by the lucide icon import, so use the DOM constructor.
+    const element = new window.Image();
+    element.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      resolve(element);
+    };
+    element.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error("Could not read that image."));
+    };
+    element.src = objectUrl;
+  });
+
+// Phone cameras produce 4-8MB posters. Downscaling in the browser keeps uploads
+// fast on venue wifi and keeps the database small. GIFs are left alone so
+// animations survive, and the original is kept whenever re-encoding is bigger.
+const compressImageFile = async (file) => {
+  if (!file?.type?.startsWith("image/") || file.type === "image/gif") {
+    return file;
+  }
+  try {
+    const element = await loadImageElement(file);
+    const longestEdge = Math.max(element.naturalWidth, element.naturalHeight);
+    const scale = longestEdge > MAX_POSTER_EDGE ? MAX_POSTER_EDGE / longestEdge : 1;
+    if (scale === 1 && file.size <= COMPRESS_THRESHOLD_BYTES) {
+      return file;
+    }
+
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(element.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(element.naturalHeight * scale));
+    const context = canvas.getContext("2d");
+    context.drawImage(element, 0, 0, canvas.width, canvas.height);
+
+    // Keep PNG sources as PNG so transparency is not flattened to black.
+    const outputType = file.type === "image/png" ? "image/png" : "image/jpeg";
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, outputType, 0.82));
+    if (!blob || blob.size >= file.size) {
+      return file;
+    }
+
+    const extension = outputType === "image/png" ? "png" : "jpg";
+    const baseName = file.name.replace(/\.[^.]+$/, "") || "poster";
+    return new File([blob], `${baseName}.${extension}`, { type: outputType });
+  } catch (error) {
+    // Fall back to the original file; the API validates it either way.
+    return file;
+  }
+};
+
+// Poster filenames at the venue already encode the date and act ("05septblxie.jpg",
+// "18jul.jpg", "2026-09-05 Party Yama.png"), so the event form can prefill from them.
+const MONTH_TOKENS = [
+  ["january", 0], ["jan", 0],
+  ["february", 1], ["feb", 1],
+  ["march", 2], ["mar", 2],
+  ["april", 3], ["apr", 3],
+  ["may", 4],
+  ["june", 5], ["jun", 5],
+  ["july", 6], ["jul", 6],
+  ["august", 7], ["aug", 7],
+  ["september", 8], ["sept", 8], ["sep", 8],
+  ["october", 9], ["oct", 9],
+  ["november", 10], ["nov", 10],
+  ["december", 11], ["dec", 11],
+];
+
+const MONTH_LOOKUP = MONTH_TOKENS.reduce((accumulator, [token, index]) => {
+  accumulator[token] = index;
+  return accumulator;
+}, {});
+
+// A day number must sit next to the month name, otherwise words like "marathon"
+// would read as a March date.
+const NAMED_DATE_RE = new RegExp(
+  `\\b(\\d{1,2})?\\s*(${MONTH_TOKENS.map(([token]) => token).join("|")})\\.?\\s*(\\d{1,2})?`,
+  "i",
+);
+
+// Camera rolls and WhatsApp produce filenames that carry no useful title, even
+// when they do carry a usable date ("WhatsApp Image 2026-09-05 at 14.32.11.jpeg").
+const JUNK_TITLE_RE = /^(img|dsc|dscn|pxl|photo|image|screenshot|whatsapp|received|untitled|download|copy|fb|snapchat|insta)\b/i;
+
+const titleCaseWords = (value) =>
+  String(value || "")
+    .split(/[\s_-]+/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(" ");
+
+// Posters are made shortly before the event, so resolve a bare "5 Sept" to the
+// nearest sensible year rather than always assuming the current one.
+const inferPosterYear = (month, day) => {
+  const today = new Date();
+  const candidates = [today.getFullYear() - 1, today.getFullYear(), today.getFullYear() + 1];
+  for (const year of candidates) {
+    const candidate = new Date(year, month, day);
+    const daysOut = (candidate.getTime() - today.getTime()) / 86400000;
+    if (daysOut >= -45 && daysOut <= 320) {
+      return candidate;
+    }
+  }
+  return new Date(today.getFullYear(), month, day);
+};
+
+const isCalendarMonth = (value) => Number(value) >= 1 && Number(value) <= 12;
+const isCalendarDay = (value) => Number(value) >= 1 && Number(value) <= 31;
+
+const parsePosterFilename = (filename) => {
+  const stem = String(filename || "").replace(/\.[^.]+$/, "");
+  const cleaned = stem.replace(/[_]+/g, " ").trim();
+  if (!cleaned) {
+    return { date: null, title: "" };
+  }
+
+  let date = null;
+  let parsedDay = null;
+  let remainder = cleaned;
+
+  const iso = cleaned.match(/\b(20\d{2})[-.](\d{1,2})[-.](\d{1,2})\b/);
+  const dayFirst = cleaned.match(/\b(\d{1,2})[-.](\d{1,2})[-.](20\d{2}|\d{2})\b/);
+  const named = cleaned.match(NAMED_DATE_RE);
+
+  if (iso && isCalendarMonth(iso[2]) && isCalendarDay(iso[3])) {
+    parsedDay = Number(iso[3]);
+    date = new Date(Number(iso[1]), Number(iso[2]) - 1, parsedDay);
+    remainder = cleaned.replace(iso[0], " ");
+  } else if (dayFirst && isCalendarMonth(dayFirst[2]) && isCalendarDay(dayFirst[1])) {
+    const year = dayFirst[3].length === 2 ? 2000 + Number(dayFirst[3]) : Number(dayFirst[3]);
+    parsedDay = Number(dayFirst[1]);
+    date = new Date(year, Number(dayFirst[2]) - 1, parsedDay);
+    remainder = cleaned.replace(dayFirst[0], " ");
+  } else if (named && (named[1] || named[3])) {
+    const month = MONTH_LOOKUP[named[2].toLowerCase()];
+    const day = Number(named[1] || named[3]);
+    if (month !== undefined && day >= 1 && day <= 31) {
+      parsedDay = day;
+      date = inferPosterYear(month, day);
+      remainder = cleaned.replace(named[0], " ");
+    }
+  }
+
+  // Reject impossible dates such as "31feb", which JavaScript silently rolls over.
+  if (date && (Number.isNaN(date.getTime()) || date.getDate() !== parsedDay)) {
+    date = null;
+  }
+
+  const words = remainder.replace(/[^A-Za-z0-9&' -]+/g, " ").trim();
+  if (JUNK_TITLE_RE.test(words)) {
+    return { date, title: "" };
+  }
+
+  const title = titleCaseWords(words);
+  return { date, title: title.length >= 3 ? title : "" };
 };
 
 function App() {
@@ -2718,7 +2912,7 @@ function SpecialDialog({ special, onOpenChange, onRequest }) {
               <DialogDescription>{special.price_label}</DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
-              <img src={special.image_url || "/vibes.jpeg"} alt={special.title} className="h-56 w-full rounded-3xl vv-image-cover" />
+              <img src={resolveMediaUrl(special.image_url) || "/vibes.jpeg"} alt={special.title} className="h-56 w-full rounded-3xl vv-image-cover" />
               <p className="text-sm text-muted-foreground">{special.description}</p>
               <div className="flex flex-wrap gap-2">
                 {(special.tags || []).map((tag) => (
@@ -2820,7 +3014,7 @@ function AdminDashboardPage({ dashboard, requests, loading }) {
 }
 
 function AdminEventsPage({ token, events, refresh }) {
-  const initialForm = { title: "", date: new Date(), time: "20:00", description: "", lineup: "", image_url: "/vibes.jpeg", location: "Vaal Vibes", status: "scheduled", cta_label: "RSVP Intent" };
+  const initialForm = { title: "", date: new Date(), time: "20:00", description: "", lineup: "", image_url: "", location: "Vaal Vibes", status: "scheduled", cta_label: "RSVP Intent" };
   const [query, setQuery] = useState("");
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingEvent, setEditingEvent] = useState(null);
@@ -2851,13 +3045,36 @@ function AdminEventsPage({ token, events, refresh }) {
     setEditorOpen(true);
   };
 
+  // Posters are named after the night ("05septblxie.jpg"), so lift the date and
+  // act out of the filename and fill in whatever the admin has left blank.
+  const applyPosterFilename = (filename) => {
+    const hints = parsePosterFilename(filename);
+    const updates = {};
+    const filled = [];
+
+    if (hints.date && !editingEvent) {
+      updates.date = hints.date;
+      filled.push(`the date (${formatDate(hints.date)})`);
+    }
+    if (hints.title && !formState.title.trim()) {
+      updates.title = hints.title;
+      filled.push(`the title (${hints.title})`);
+    }
+    if (filled.length === 0) {
+      return;
+    }
+
+    setFormState((current) => ({ ...current, ...updates }));
+    toast.info(`Filled in ${filled.join(" and ")} from the poster name — change it if it is not right.`);
+  };
+
   const saveEvent = async () => {
     const payload = {
       title: formState.title,
       date: buildIsoDateTime(formState.date, formState.time),
       description: formState.description,
       lineup: formState.lineup.split(",").map((value) => value.trim()).filter(Boolean),
-      image_url: formState.image_url,
+      image_url: formState.image_url || HERO_IMAGE,
       location: formState.location,
       status: formState.status,
       cta_label: formState.cta_label,
@@ -2958,7 +3175,7 @@ function AdminEventsPage({ token, events, refresh }) {
         <SheetContent side="right" className="w-full overflow-y-auto border-white/10 bg-card sm:max-w-xl">
           <SheetHeader>
             <SheetTitle>{editingEvent ? "Edit event" : "Create event"}</SheetTitle>
-            <SheetDescription>Use matte-black surfaces and gold accents per the design guidelines.</SheetDescription>
+            <SheetDescription>Drop the poster in first — the date and title fill themselves in from the file name.</SheetDescription>
           </SheetHeader>
           <div className="mt-6 space-y-4">
             <Field label="Title" testId="event-form-title-input">
@@ -2974,9 +3191,15 @@ function AdminEventsPage({ token, events, refresh }) {
             <Field label="Line-up (comma separated)" testId="event-form-lineup-input">
               <Input value={formState.lineup} onChange={(event) => setFormState((current) => ({ ...current, lineup: event.target.value }))} />
             </Field>
-            <Field label="Image URL" testId="event-form-image-input">
-              <Input value={formState.image_url} onChange={(event) => setFormState((current) => ({ ...current, image_url: event.target.value }))} />
-            </Field>
+            <PosterUploadField
+              label="Event poster"
+              description="The poster shown on the site. Uploading also fills in the date and title from the file name."
+              value={formState.image_url}
+              token={token}
+              onChange={(url) => setFormState((current) => ({ ...current, image_url: url }))}
+              onUploaded={(asset, file) => applyPosterFilename(file?.name)}
+              testId="event-form-image-input"
+            />
             <Field label="Status" testId="event-form-status-select">
               <Select value={formState.status} onValueChange={(value) => setFormState((current) => ({ ...current, status: value }))}>
                 <SelectTrigger><SelectValue placeholder="Status" /></SelectTrigger>
@@ -2996,7 +3219,7 @@ function AdminEventsPage({ token, events, refresh }) {
 }
 
 function AdminSpecialsPage({ token, specials, refresh }) {
-  const initialForm = { title: "", description: "", price_label: "", image_url: "/vibes.jpeg", date: new Date(), time: "23:59", status: "active", tags: "" };
+  const initialForm = { title: "", description: "", price_label: "", image_url: "", date: new Date(), time: "23:59", status: "active", tags: "" };
   const [view, setView] = useState("grid");
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingSpecial, setEditingSpecial] = useState(null);
@@ -3029,7 +3252,7 @@ function AdminSpecialsPage({ token, specials, refresh }) {
       title: formState.title,
       description: formState.description,
       price_label: formState.price_label,
-      image_url: formState.image_url,
+      image_url: formState.image_url || HERO_IMAGE,
       available_until: buildIsoDateTime(formState.date, formState.time),
       status: formState.status,
       tags: formState.tags.split(",").map((value) => value.trim()).filter(Boolean),
@@ -3074,7 +3297,7 @@ function AdminSpecialsPage({ token, specials, refresh }) {
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {(specials || []).map((special) => (
               <Card key={special.id} className="overflow-hidden border-white/10 bg-card" data-testid={`admin-special-card-${special.id}`}>
-                <img src={special.image_url || "/vibes.jpeg"} alt={special.title} className="h-48 w-full vv-image-cover" />
+                <img src={resolveMediaUrl(special.image_url) || "/vibes.jpeg"} alt={special.title} className="h-48 w-full vv-image-cover" />
                 <CardContent className="space-y-4 p-5">
                   <div className="flex items-start justify-between gap-3">
                     <div>
@@ -3130,13 +3353,19 @@ function AdminSpecialsPage({ token, specials, refresh }) {
         <SheetContent side="right" className="w-full overflow-y-auto border-white/10 bg-card sm:max-w-xl">
           <SheetHeader>
             <SheetTitle>{editingSpecial ? "Edit special" : "Create special"}</SheetTitle>
-            <SheetDescription>Use hosted image URLs for the special image field.</SheetDescription>
+            <SheetDescription>Upload the special&apos;s image straight from your phone or laptop.</SheetDescription>
           </SheetHeader>
           <div className="mt-6 space-y-4">
             <Field label="Title" testId="special-form-title-input"><Input value={formState.title} onChange={(event) => setFormState((current) => ({ ...current, title: event.target.value }))} /></Field>
             <Field label="Description" testId="special-form-description-input"><Textarea rows={4} value={formState.description} onChange={(event) => setFormState((current) => ({ ...current, description: event.target.value }))} /></Field>
             <Field label="Price label" testId="special-form-price-input"><Input value={formState.price_label} onChange={(event) => setFormState((current) => ({ ...current, price_label: event.target.value }))} /></Field>
-            <Field label="Image URL" testId="special-form-image-input"><Input value={formState.image_url} onChange={(event) => setFormState((current) => ({ ...current, image_url: event.target.value }))} /></Field>
+            <PosterUploadField
+              label="Special image"
+              value={formState.image_url}
+              token={token}
+              onChange={(url) => setFormState((current) => ({ ...current, image_url: url }))}
+              testId="special-form-image-input"
+            />
             <DatePickerField label="Available until" value={formState.date} onChange={(date) => setFormState((current) => ({ ...current, date }))} testId="special-form-date-picker" />
             <Field label="Time" testId="special-form-time-input"><Input value={formState.time} onChange={(event) => setFormState((current) => ({ ...current, time: event.target.value }))} /></Field>
             <Field label="Tags" testId="special-form-tags-input"><Input value={formState.tags} onChange={(event) => setFormState((current) => ({ ...current, tags: event.target.value }))} placeholder="vip, share, signature" /></Field>
@@ -3685,13 +3914,13 @@ function AdminMenuPage({ token, categories, refresh }) {
                 placeholder="signature, share, chef"
               />
             </Field>
-            <Field label="Image URL" testId="item-form-image-url-input">
-              <Input
-                value={itemForm.image_url}
-                onChange={(event) => updateItemForm({ image_url: event.target.value })}
-                placeholder="https://..."
-              />
-            </Field>
+            <PosterUploadField
+              label="Item image (optional)"
+              value={itemForm.image_url}
+              token={token}
+              onChange={(url) => updateItemForm({ image_url: url })}
+              testId="item-form-image-url-input"
+            />
             <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-black/20 px-3 py-2">
               <Switch
                 checked={itemForm.featured}
@@ -5058,6 +5287,319 @@ function SkeletonPanel() {
         <div key={item} className="h-40 animate-pulse rounded-[24px] border border-white/10 bg-card/60" />
       ))}
     </div>
+  );
+}
+
+// --- Poster upload -----------------------------------------------------------
+// Replaces the old "paste an image URL" flow: the team drops a poster straight
+// into the form, the SPA compresses it, and the API stores it. Pasting a link
+// still works for images that already live somewhere else.
+function PosterUploadField({ label, description, value, onChange, token, testId, onUploaded }) {
+  const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [dragging, setDragging] = useState(false);
+  const [linkMode, setLinkMode] = useState(false);
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  const inputRef = useRef(null);
+
+  const previewUrl = resolveMediaUrl(value);
+
+  const uploadFile = useCallback(
+    async (file) => {
+      if (!file) {
+        return;
+      }
+      if (!file.type?.startsWith("image/")) {
+        toast.error("That file is not an image. Use a JPG, PNG, WEBP, or GIF.");
+        return;
+      }
+
+      setUploading(true);
+      setProgress(0);
+      try {
+        const prepared = await compressImageFile(file);
+        const form = new FormData();
+        form.append("file", prepared, prepared.name);
+        const response = await api.post("/admin/media", form, {
+          ...authConfig(token),
+          onUploadProgress: (event) => {
+            if (event.total) {
+              setProgress(Math.round((event.loaded / event.total) * 100));
+            }
+          },
+        });
+        onChange(response.data.url);
+        if (onUploaded) {
+          onUploaded(response.data, file);
+        }
+        toast.success("Poster uploaded.");
+      } catch (error) {
+        toast.error(error.response?.data?.detail || "Could not upload that image.");
+      } finally {
+        setUploading(false);
+        setProgress(0);
+      }
+    },
+    [onChange, onUploaded, token],
+  );
+
+  const handleFileInput = (event) => {
+    const file = event.target.files?.[0];
+    // Reset so picking the same file twice still fires a change event.
+    event.target.value = "";
+    uploadFile(file);
+  };
+
+  const handleDrop = (event) => {
+    event.preventDefault();
+    setDragging(false);
+    uploadFile(event.dataTransfer?.files?.[0]);
+  };
+
+  const handlePaste = (event) => {
+    const item = Array.from(event.clipboardData?.items || []).find((entry) => entry.type.startsWith("image/"));
+    if (item) {
+      event.preventDefault();
+      uploadFile(item.getAsFile());
+    }
+  };
+
+  return (
+    <div className="space-y-2" data-testid={testId}>
+      <div className="flex items-center justify-between gap-2">
+        <Label className="text-sm text-white">{label}</Label>
+        <div className="flex gap-1">
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="h-7 px-2 text-xs"
+            onClick={() => setLibraryOpen(true)}
+            data-testid={`${testId}-library-button`}
+          >
+            <Image className="mr-1 h-3.5 w-3.5" />Library
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="h-7 px-2 text-xs"
+            onClick={() => setLinkMode((current) => !current)}
+            data-testid={`${testId}-link-toggle`}
+          >
+            <Link2 className="mr-1 h-3.5 w-3.5" />{linkMode ? "Hide link" : "Use a link"}
+          </Button>
+        </div>
+      </div>
+
+      {previewUrl ? (
+        <div
+          onDragOver={(event) => {
+            event.preventDefault();
+            setDragging(true);
+          }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={handleDrop}
+          className={`overflow-hidden rounded-2xl border bg-black/30 transition-colors ${
+            dragging ? "border-primary" : "border-white/10"
+          }`}
+        >
+          <img
+            src={previewUrl}
+            alt="Selected poster"
+            className="max-h-64 w-full bg-black/40 object-contain"
+            data-testid={`${testId}-preview`}
+          />
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-white/5 px-3 py-2">
+            <span className="text-xs text-muted-foreground">
+              {isUploadedMediaUrl(value) ? "Uploaded to Vaal Vibes" : value}
+            </span>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={uploading}
+                onClick={() => inputRef.current?.click()}
+                data-testid={`${testId}-replace-button`}
+              >
+                Replace
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={() => onChange("")}
+                data-testid={`${testId}-remove-button`}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          onDragOver={(event) => {
+            event.preventDefault();
+            setDragging(true);
+          }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={handleDrop}
+          onPaste={handlePaste}
+          disabled={uploading}
+          className={`flex w-full flex-col items-center gap-2 rounded-2xl border border-dashed px-4 py-8 text-center transition-colors ${
+            dragging ? "border-primary bg-primary/10" : "border-white/15 bg-black/20 hover:border-primary/40"
+          }`}
+          data-testid={`${testId}-dropzone`}
+        >
+          {uploading ? (
+            <Loader2 className="h-6 w-6 animate-spin text-primary" />
+          ) : (
+            <UploadCloud className="h-6 w-6 text-primary" />
+          )}
+          <span className="text-sm text-white">
+            {uploading ? "Uploading..." : "Drop a poster here, or tap to choose one"}
+          </span>
+          <span className="text-xs text-muted-foreground">
+            JPG, PNG, WEBP or GIF up to 8MB. Large photos are shrunk automatically.
+          </span>
+        </button>
+      )}
+
+      {uploading ? <Progress value={progress} className="h-1" data-testid={`${testId}-progress`} /> : null}
+
+      {linkMode ? (
+        <Input
+          value={isUploadedMediaUrl(value) ? "" : value || ""}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder="https://... or /poster.jpg"
+          data-testid={`${testId}-url-input`}
+        />
+      ) : null}
+
+      {description ? <p className="text-xs text-muted-foreground">{description}</p> : null}
+
+      <input
+        ref={inputRef}
+        type="file"
+        accept={ACCEPTED_IMAGE_TYPES}
+        className="hidden"
+        onChange={handleFileInput}
+        data-testid={`${testId}-file-input`}
+      />
+
+      <MediaLibraryDialog
+        open={libraryOpen}
+        onOpenChange={setLibraryOpen}
+        token={token}
+        onSelect={(asset) => {
+          onChange(asset.url);
+          setLibraryOpen(false);
+        }}
+      />
+    </div>
+  );
+}
+
+function MediaLibraryDialog({ open, onOpenChange, token, onSelect }) {
+  const [assets, setAssets] = useState([]);
+  const [summary, setSummary] = useState({ count: 0, total_bytes: 0 });
+  const [loading, setLoading] = useState(false);
+
+  const loadLibrary = useCallback(async () => {
+    setLoading(true);
+    try {
+      const response = await api.get("/admin/media", authConfig(token));
+      setAssets(response.data.assets || []);
+      setSummary({ count: response.data.count || 0, total_bytes: response.data.total_bytes || 0 });
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Could not load the poster library.");
+    } finally {
+      setLoading(false);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    if (open) {
+      loadLibrary();
+    }
+  }, [open, loadLibrary]);
+
+  const deleteAsset = async (assetId) => {
+    try {
+      await api.delete(`/admin/media/${assetId}`, authConfig(token));
+      toast.success("Poster deleted.");
+      loadLibrary();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Could not delete that poster.");
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-3xl border-white/10 bg-card" data-testid="media-library-dialog">
+        <DialogHeader>
+          <DialogTitle className="font-display text-2xl text-white">Poster library</DialogTitle>
+          <DialogDescription>
+            Every poster uploaded from the admin console. Reuse one, or delete posters no longer in use
+            {summary.count ? ` — ${summary.count} stored, ${formatBytes(summary.total_bytes)} total.` : "."}
+          </DialogDescription>
+        </DialogHeader>
+        <ScrollArea className="max-h-[60vh]">
+          {loading ? (
+            <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />Loading posters...
+            </div>
+          ) : assets.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-white/15 px-4 py-10 text-center text-sm text-muted-foreground">
+              No posters uploaded yet. Drop one into an event or special to get started.
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-3 p-1 sm:grid-cols-3">
+              {assets.map((asset) => (
+                <div
+                  key={asset.id}
+                  className="overflow-hidden rounded-2xl border border-white/10 bg-black/30"
+                  data-testid={`media-library-item-${asset.id}`}
+                >
+                  <button
+                    type="button"
+                    onClick={() => onSelect(asset)}
+                    className="block w-full"
+                    data-testid={`media-library-select-${asset.id}`}
+                  >
+                    <img
+                      loading="lazy"
+                      src={resolveMediaUrl(asset.url)}
+                      alt={asset.filename}
+                      className="aspect-[3/4] w-full bg-black/40 object-contain transition-transform duration-300 hover:scale-[1.02]"
+                    />
+                  </button>
+                  <div className="space-y-1 border-t border-white/5 px-2 py-2">
+                    <p className="truncate text-xs text-white" title={asset.filename}>{asset.filename}</p>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[11px] text-muted-foreground">{formatBytes(asset.size)}</span>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="h-6 px-2"
+                        onClick={() => deleteAsset(asset.id)}
+                        data-testid={`media-library-delete-${asset.id}`}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </ScrollArea>
+      </DialogContent>
+    </Dialog>
   );
 }
 

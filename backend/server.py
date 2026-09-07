@@ -14,8 +14,9 @@ import uuid
 import jwt
 import pyotp
 import resend
+from bson.binary import Binary
 from dotenv import load_dotenv
-from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request, status
+from fastapi import APIRouter, Depends, FastAPI, File, Header, HTTPException, Request, Response, UploadFile, status
 from motor.motor_asyncio import AsyncIOMotorClient
 from passlib.context import CryptContext
 from pydantic import BaseModel, ConfigDict, Field
@@ -248,6 +249,68 @@ class GalleryBulkResult(BaseModel):
     failed: int
     errors: List[str] = Field(default_factory=list)
     photos: List[GalleryPhoto] = Field(default_factory=list)
+
+
+# --- Media library (poster / image uploads) -------------------------------
+# Images are stored as binary documents in Mongo so the venue team can upload a
+# poster straight from the admin console instead of committing files to the repo.
+# Uploads are capped well under Mongo's 16MB document limit and the SPA also
+# downscales before sending, so a typical poster lands in the 150-400KB range.
+
+MAX_UPLOAD_BYTES = 8 * 1024 * 1024
+
+IMAGE_SIGNATURES: Tuple[Tuple[bytes, str], ...] = (
+    (b"\xff\xd8\xff", "image/jpeg"),
+    (b"\x89PNG\r\n\x1a\n", "image/png"),
+    (b"GIF87a", "image/gif"),
+    (b"GIF89a", "image/gif"),
+)
+
+MEDIA_EXTENSIONS = {
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/gif": ".gif",
+    "image/webp": ".webp",
+}
+
+
+def sniff_image_type(data: bytes) -> Optional[str]:
+    """Return the real image content type from magic bytes, or None if not an image.
+
+    The browser-supplied Content-Type is not trusted: an attacker with an admin
+    token could otherwise park arbitrary HTML on the public media route.
+    """
+    for signature, content_type in IMAGE_SIGNATURES:
+        if data.startswith(signature):
+            return content_type
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+
+def safe_media_filename(raw: str, content_type: str) -> str:
+    name = Path(raw or "").name
+    stem = re.sub(r"[^A-Za-z0-9._-]+", "-", Path(name).stem).strip("-.")
+    if not stem:
+        stem = "poster"
+    return f"{stem[:80]}{MEDIA_EXTENSIONS.get(content_type, '.jpg')}"
+
+
+class MediaAsset(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    filename: str
+    content_type: str
+    size: int
+    url: str
+    uploaded_by: str = ""
+    uploaded_by_name: str = ""
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class MediaLibraryResponse(BaseModel):
+    assets: List[MediaAsset] = Field(default_factory=list)
+    count: int = 0
+    total_bytes: int = 0
 
 
 class PromoPool(BaseModel):
@@ -1914,6 +1977,112 @@ async def admin_delete_gallery_photo(photo_id: str, current_admin: dict = Depend
     await db.gallery_photos.delete_one({"id": photo_id})
     await append_audit_log(current_admin, "delete", "gallery-photo", photo_id, f"Deleted gallery photo {photo['drive_file_id']}")
     return MessageResponse(message="Gallery photo deleted")
+
+
+async def media_asset_usage(media_url: str) -> List[str]:
+    """Human-readable list of the content items currently pointing at a media URL."""
+    used_by: List[str] = []
+    async for event in db.events.find({"image_url": media_url}, {"_id": 0, "title": 1}):
+        used_by.append(f"event \"{event.get('title', 'Untitled')}\"")
+    async for special in db.specials.find({"image_url": media_url}, {"_id": 0, "title": 1}):
+        used_by.append(f"special \"{special.get('title', 'Untitled')}\"")
+    async for category in db.menu_categories.find({"items.image_url": media_url}, {"_id": 0, "items": 1}):
+        for item in category.get("items", []):
+            if item.get("image_url") == media_url:
+                used_by.append(f"menu item \"{item.get('name', 'Untitled')}\"")
+    return used_by
+
+
+@api_router.post("/admin/media", response_model=MediaAsset)
+async def admin_upload_media(
+    file: UploadFile = File(...),
+    current_admin: dict = Depends(get_current_admin),
+) -> MediaAsset:
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="That file is empty. Pick an image and try again.")
+    if len(data) > MAX_UPLOAD_BYTES:
+        size_mb = len(data) / (1024 * 1024)
+        raise HTTPException(
+            status_code=413,
+            detail=f"That image is {size_mb:.1f}MB. Please use an image smaller than 8MB.",
+        )
+
+    content_type = sniff_image_type(data)
+    if content_type is None:
+        raise HTTPException(
+            status_code=400,
+            detail="That file is not an image. Upload a JPG, PNG, WEBP, or GIF poster.",
+        )
+
+    asset = MediaAsset(
+        filename=safe_media_filename(file.filename or "poster", content_type),
+        content_type=content_type,
+        size=len(data),
+        url="",
+        uploaded_by=current_admin["id"],
+        uploaded_by_name=current_admin.get("name", ""),
+    )
+    asset.url = f"/api/public/media/{asset.id}"
+
+    await db.media_assets.insert_one({**asset.model_dump(), "data": Binary(data)})
+    await append_audit_log(
+        current_admin,
+        "create",
+        "media-asset",
+        asset.id,
+        f"Uploaded image {asset.filename} ({asset.size // 1024}KB)",
+    )
+    return asset
+
+
+@api_router.get("/admin/media", response_model=MediaLibraryResponse)
+async def admin_list_media(current_admin: dict = Depends(get_current_admin)) -> MediaLibraryResponse:
+    assets = serialize_many(
+        await db.media_assets.find({}, {"_id": 0, "data": 0})
+        .sort("created_at", -1)
+        .to_list(length=500)
+    )
+    total_bytes = 0
+    async for doc in db.media_assets.find({}, {"_id": 0, "size": 1}):
+        total_bytes += int(doc.get("size", 0) or 0)
+    return MediaLibraryResponse(assets=assets, count=len(assets), total_bytes=total_bytes)
+
+
+@api_router.delete("/admin/media/{media_id}", response_model=MessageResponse)
+async def admin_delete_media(media_id: str, current_admin: dict = Depends(get_current_admin)) -> MessageResponse:
+    asset = await db.media_assets.find_one({"id": media_id}, {"_id": 0, "data": 0})
+    if not asset:
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    used_by = await media_asset_usage(asset["url"])
+    if used_by:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Still in use by {', '.join(used_by[:5])}. Swap the image there first, then delete it here.",
+        )
+
+    await db.media_assets.delete_one({"id": media_id})
+    await append_audit_log(current_admin, "delete", "media-asset", media_id, f"Deleted image {asset['filename']}")
+    return MessageResponse(message="Image deleted")
+
+
+@api_router.get("/public/media/{media_id}")
+async def public_get_media(media_id: str, request: Request) -> Response:
+    # Media bytes are immutable per id, so browsers and CDNs may cache forever.
+    etag = f'"{media_id}"'
+    cache_headers = {"Cache-Control": "public, max-age=31536000, immutable", "ETag": etag}
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304, headers=cache_headers)
+
+    doc = await db.media_assets.find_one({"id": media_id}, {"_id": 0, "data": 1, "content_type": 1})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Image not found")
+    return Response(
+        content=bytes(doc["data"]),
+        media_type=doc.get("content_type", "image/jpeg"),
+        headers=cache_headers,
+    )
 
 
 @api_router.get("/admin/campaigns", response_model=List[Campaign])
